@@ -56,7 +56,7 @@ public class ConsumerWorker implements Runnable {
 				int numProcessedMessages = 0;
 				int numSkippedIndexingMessages = 0;
 				int numMessagesInBatch = 0;
-				long offsetOfNextBatch = 0;
+				long pollStartMillis = 0L;
 
 				logger.debug("consumerId={}; about to call consumer.poll() ...", consumerId);
 				ConsumerRecords<String, String> records = consumer.poll(pollIntervalMs);
@@ -73,8 +73,8 @@ public class ConsumerWorker implements Runnable {
 					logger.debug("consumerId={}; recieved record: {}", consumerId, data);
 					if (isPollFirstRecord) {
 						isPollFirstRecord = false;
-						logger.info("Start offset for partition {} in this poll : {}", record.partition(),
-								record.offset());
+						logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
+						pollStartMillis = System.currentTimeMillis();
 					}
 
 					try {
@@ -90,17 +90,24 @@ public class ConsumerWorker implements Runnable {
 						FailedEventsLogger.logFailedToTransformEvent(record.offset(), e.getMessage(), record.value());
 					}
 
-				}
 
-				logger.info(
-						"Total # of messages in this batch: {}; "
-								+ "# of successfully transformed and added to Index: {}; # of skipped from indexing: {}; offsetOfNextBatch: {}",
-						numMessagesInBatch, numProcessedMessages, numSkippedIndexingMessages, offsetOfNextBatch);
+				}
+				long timeBeforePost = System.currentTimeMillis();
 
 				// push to ES whole batch
 				boolean moveToNextBatch = false;
 				if (!records.isEmpty()) {				
 					moveToNextBatch = postToElasticSearch();
+					long timeToPost = System.currentTimeMillis() ;
+					double perMessageTimeMillis = (double) (timeToPost - pollStartMillis) / numProcessedMessages;
+                    logger.info("Previous poll snapshot: total-messages: {}, messages-processed: {}, messages-skipped: {}" +
+                                    ", time-to-create-batch: {} ms, time-to-post-millis: {} ms, time-to-post-millis/messages-processed: {} ms"
+                            , numMessagesInBatch
+							, numProcessedMessages
+							, numSkippedIndexingMessages
+							, timeBeforePost-pollStartMillis
+							, timeToPost-pollStartMillis
+							, perMessageTimeMillis) ;
 				}
 				
 				if (moveToNextBatch) {
