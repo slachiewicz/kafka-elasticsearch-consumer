@@ -1,6 +1,7 @@
 package org.elasticsearch.kafka.indexer.jobs;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
@@ -15,12 +16,8 @@ import org.springframework.beans.factory.annotation.Value;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import javax.annotation.Resource;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -35,6 +32,7 @@ public class ConsumerManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ConsumerManager.class);
     private static final String KAFKA_CONSUMER_THREAD_NAME_FORMAT = "kafka-elasticsearch-consumer-thread-%d";
+    public static final String PROPERTY_SEPARATOR = ".";
 
     @Value("${kafka.consumer.source.topic:testTopic}")
     private String kafkaTopic;
@@ -64,6 +62,12 @@ public class ConsumerManager {
     @Autowired
     @Qualifier("messageHandler")
     private ObjectFactory<IMessageHandler> messageHandlerObjectFactory;
+
+    @Resource(name = "applicationProperties")
+    private Properties applicationProperties;
+
+    @Value("${kafka.consumer.property.prefix:consumer.kafka.property.}")
+    private String consumerKafkaPropertyPrefix;
 
     private String consumerStartOptionsConfig;
 
@@ -95,6 +99,9 @@ public class ConsumerManager {
         kafkaProperties.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, maxPartitionFetchBytes);
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         // TODO make a dynamic property determined from the mockedKafkaCluster metadata
+
+        consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
+        extractAndSetKafkaProperties(applicationProperties, kafkaProperties, consumerKafkaPropertyPrefix);
         int consumerPoolCount = kafkaConsumerPoolCount;
         consumerStartOptions = ConsumerStartOption.fromFile(consumerStartOptionsConfig);
         determineOffsetForAllPartitionsAndSeek();
@@ -202,6 +209,19 @@ public class ConsumerManager {
             shutdownConsumers();
         } else {
             logger.warn("Already stopped");
+        }
+    }
+
+    public static void extractAndSetKafkaProperties(Properties applicationProperties, Properties kafkaProperties, String kafkaPropertyPrefix) {
+        if(applicationProperties != null && applicationProperties.size() >0){
+            for(Map.Entry <Object,Object> currentPropertyEntry :applicationProperties.entrySet()){
+                String propertyName = currentPropertyEntry.getKey().toString();
+                if(StringUtils.isNotBlank(propertyName) && propertyName.contains(kafkaPropertyPrefix)){
+                    String validKafkaConsumerProperty = propertyName.replace(kafkaPropertyPrefix, StringUtils.EMPTY);
+                    kafkaProperties.put(validKafkaConsumerProperty, currentPropertyEntry.getValue());
+                    logger.info("Adding kafka property with prefix: {}, key: {}, value: {}", kafkaPropertyPrefix, validKafkaConsumerProperty, currentPropertyEntry.getValue());
+                }
+            }
         }
     }
 
