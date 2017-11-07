@@ -84,9 +84,7 @@ public class ConsumerWorker implements Runnable {
 						numProcessedMessages++;
 					} catch (Exception e) {
 						numSkippedIndexingMessages++;
-
-						logger.error("ERROR processing message {} - skipping it: {}", record.offset(), record.value(), e);
-						FailedEventsLogger.logFailedToTransformEvent(record.offset(), e, record.value());
+                                                FailedEventsLogger.logFailedToTransformEvent(record.offset(), e, record.value());
 					}
 
 
