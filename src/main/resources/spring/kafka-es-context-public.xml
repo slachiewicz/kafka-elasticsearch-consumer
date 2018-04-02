@@ -12,8 +12,11 @@
 
     <util:properties id="applicationProperties"
                      ignore-resource-not-found="true"
-                     location="classpath:config/kafka-es-indexer.properties file:${indexer.properties}"
+                     location="classpath:config/kafka-es-indexer.properties, file:${indexer.properties}"
     />
+    <context:property-placeholder
+            ignore-resource-not-found="true" properties-ref="applicationProperties"/>
+    <context:annotation-config />
 
     <bean id="messageHandler"
           class="org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl"

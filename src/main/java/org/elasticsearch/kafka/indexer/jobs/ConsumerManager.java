@@ -38,7 +38,7 @@ public class ConsumerManager {
     private String kafkaTopic;
     @Value("${kafka.consumer.group.name:kafka-elasticsearch-consumer}")
     private String consumerGroupName;
-    @Value("${application.id:instance1}")
+    @Value("${application.id:app1}")
     private String consumerInstanceName;
     @Value("${kafka.consumer.brokers.list:localhost:9092}")
     private String kafkaBrokersList;
@@ -52,7 +52,6 @@ public class ConsumerManager {
     @Value("${kafka.consumer.max.partition.fetch.bytes:1048576}")
     private int maxPartitionFetchBytes;
     // if set to TRUE - enable logging timings of the event processing
-    // TODO add implementation to use this flag
     @Value("${is.perf.reporting.enabled:false}")
     private boolean isPerfReportingEnabled;
 
@@ -81,15 +80,12 @@ public class ConsumerManager {
     public ConsumerManager() {
     }
 
-
-
     public void setConsumerStartOptionsConfig(String consumerStartOptionsConfig) {
         this.consumerStartOptionsConfig = consumerStartOptionsConfig;
     }
 
     private void init() {
         logger.info("init() is starting ....");
-
         kafkaProperties = new Properties();
         kafkaProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBrokersList);
         kafkaProperties.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupName);
@@ -98,7 +94,6 @@ public class ConsumerManager {
         kafkaProperties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, consumerSessionTimeoutMs);
         kafkaProperties.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, maxPartitionFetchBytes);
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        // TODO make a dynamic property determined from the mockedKafkaCluster metadata
 
         consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
         extractAndSetKafkaProperties(applicationProperties, kafkaProperties, consumerKafkaPropertyPrefix);
@@ -144,12 +139,11 @@ public class ConsumerManager {
                             -> logger.info("Offset position during the shutdown for consumerId : {}, partition : {}, offset : {}", consumer.getConsumerId(), topicPartition.partition(), offset.offset())));
         }
         logger.info("shutdownConsumers() finished");
-
-
     }
 
     private void determineOffsetForAllPartitionsAndSeek() {
-        KafkaConsumer consumer = new KafkaConsumer<>(kafkaProperties);
+        logger.info("in determineOffsetForAllPartitionsAndSeek(): ");
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(kafkaProperties);
         consumer.subscribe(Arrays.asList(kafkaTopic));
 
         //Make init poll to get assigned partitions
