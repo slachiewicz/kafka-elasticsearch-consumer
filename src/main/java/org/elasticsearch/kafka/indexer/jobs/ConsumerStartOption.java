@@ -1,6 +1,7 @@
 package org.elasticsearch.kafka.indexer.jobs;
 
 import org.apache.commons.lang3.StringUtils;
+import org.elasticsearch.kafka.indexer.jobs.ConsumerStartOption.StartFrom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,37 +55,51 @@ public class ConsumerStartOption {
 	}
 
 	public static Map<Integer, ConsumerStartOption> fromFile(String configFilePath) throws IllegalArgumentException {
-		Map<Integer, ConsumerStartOption> config = new HashMap<>();
-		if (!StringUtils.isEmpty(configFilePath)) {
-			File configFile = new File(configFilePath);
-		if (configFile.exists()) {
-			try {
-				List<String> lines = Files.readAllLines(configFile.toPath());
-				lines.stream()
-						//filter empty lines and comments (lines starts with '#')
-						.filter(line -> !line.isEmpty() && !line.startsWith("#"))
-						.forEach(line -> {
-							ConsumerStartOption option = new ConsumerStartOption(line);
-							config.put(option.getPartition(), option);
-						});
-			} catch (IOException e) {
-				String message = "Unable to read Consumer start options configuration file from '" +
-						configFile.getPath() + "'";
-				logger.error(message);
-				throw new IllegalArgumentException(message);
-			}
-		} else {
-			logger.warn("Consumer start options configuration file '"
-					+ configFile.getPath() + "' doesn't exist. Consumer will use 'RESTART' option by default");
-		}
-		} else {
+		final Map<Integer, ConsumerStartOption> config = new HashMap<>();
+		if (StringUtils.isEmpty(configFilePath)) {
 			logger.info("Consumer start options configuration file is not defined. Consumer will use 'RESTART' option by default");
+			return config;
+		}
+		File configFile = new File(configFilePath);
+		if ( !configFile.exists()) {
+			logger.warn("Consumer start options configuration file '"
+				+ configFile.getPath() + "' doesn't exist. Consumer will use 'RESTART' option by default");
+			return config;
+		}
+		try {
+			List<String> lines = Files.readAllLines(configFile.toPath());
+			lines.stream()
+					//filter empty lines and comments (lines starts with '#')
+					.filter(line -> !line.isEmpty() && !line.startsWith("#"))
+					.forEach(line -> {
+						ConsumerStartOption option = new ConsumerStartOption(line);
+						config.put(option.getPartition(), option);
+					});
+		} catch (IOException e) {
+			String message = "Unable to read Consumer start options configuration file from '" +
+					configFile.getPath() + "'";
+			logger.error(message);
+			throw new IllegalArgumentException(message);
 		}
 
-		//check for default option
-		if (!config.containsKey(DEFAULT)) {
-			config.put(DEFAULT, new ConsumerStartOption(DEFAULT, StartFrom.RESTART, 0L));
+		// check for default option: if it is empty, or RESTART - return an empty configs map - 
+		// all consumers will start with RESTART option for all partitions 		
+		if (config.containsKey(DEFAULT)) {
+			ConsumerStartOption defaultOption = config.get(DEFAULT);
+			if (StartFrom.RESTART.equals(defaultOption.getStartFrom())){
+				return new HashMap<>();
+			}
 		}
+        // TODO  re-factor this code - when moving to separate DEFAULT config parameter
+        // check if there are any partitions that have RESTART option, while the DEFAULT is either EARLIEST or LATEST
+        // this mix is not allowed - we will use RESTART option for ALL partitions
+        for (ConsumerStartOption option: config.values()) {
+        	if (option.getStartFrom().equals(StartFrom.RESTART)) {
+            	logger.info("invalid config - one of the parttions is set to use RESTART with non-RESTART default " + 
+            			"- consumers will start from RESTART for all partitions" );
+        		return new HashMap<>();
+        	}
+        }
 		return config;
 	}
 
@@ -118,4 +133,33 @@ public class ConsumerStartOption {
 		LATEST,
 		RESTART
 	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + partition;
+		result = prime * result + ((startFrom == null) ? 0 : startFrom.hashCode());
+		result = prime * result + (int) (startOffset ^ (startOffset >>> 32));
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		ConsumerStartOption other = (ConsumerStartOption) obj;
+		if (partition != other.partition)
+			return false;
+		if (startFrom != other.startFrom)
+			return false;
+		if (startOffset != other.startOffset)
+			return false;
+		return true;
+	}
+	/* */
 }
