@@ -62,8 +62,8 @@ public class ConsumerStartOption {
 		}
 		File configFile = new File(configFilePath);
 		if ( !configFile.exists()) {
-			logger.warn("Consumer start options configuration file '"
-				+ configFile.getPath() + "' doesn't exist. Consumer will use 'RESTART' option by default");
+			logger.warn("Consumer start options configuration file {} doesn't exist." + 
+				"Consumer will use 'RESTART' option by default", configFile.getPath());
 			return config;
 		}
 		try {
@@ -86,7 +86,7 @@ public class ConsumerStartOption {
 		// all consumers will start with RESTART option for all partitions 		
 		if (config.containsKey(DEFAULT)) {
 			ConsumerStartOption defaultOption = config.get(DEFAULT);
-			if (StartFrom.RESTART.equals(defaultOption.getStartFrom())){
+			if (StartFrom.RESTART == defaultOption.getStartFrom()){
 				return new HashMap<>();
 			}
 		}
@@ -94,7 +94,7 @@ public class ConsumerStartOption {
         // check if there are any partitions that have RESTART option, while the DEFAULT is either EARLIEST or LATEST
         // this mix is not allowed - we will use RESTART option for ALL partitions
         for (ConsumerStartOption option: config.values()) {
-        	if (option.getStartFrom().equals(StartFrom.RESTART)) {
+        	if (option.getStartFrom() == StartFrom.RESTART) {
             	logger.info("invalid config - one of the parttions is set to use RESTART with non-RESTART default " + 
             			"- consumers will start from RESTART for all partitions" );
         		return new HashMap<>();
