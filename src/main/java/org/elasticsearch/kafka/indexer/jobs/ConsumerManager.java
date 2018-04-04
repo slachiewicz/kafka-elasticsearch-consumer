@@ -3,9 +3,12 @@ package org.elasticsearch.kafka.indexer.jobs;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.kafka.indexer.jobs.ConsumerStartOption.StartFrom;
 import org.elasticsearch.kafka.indexer.service.IMessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,11 +146,22 @@ public class ConsumerManager {
 
     private void determineOffsetForAllPartitionsAndSeek() {
         logger.info("in determineOffsetForAllPartitionsAndSeek(): ");
+        if (consumerStartOptions.isEmpty()) {
+        	logger.info("consumerStartOptions is empty or set to RESTART - consumers will start from RESTART for all partitions" );
+        	return;
+        }
+        // we are handling LATEST, EARLIEST, or CUSTOM options only now
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(kafkaProperties);
         consumer.subscribe(Arrays.asList(kafkaTopic));
 
         //Make init poll to get assigned partitions
-        consumer.poll(kafkaPollIntervalMs);
+        ConsumerRecords<String, String> records = consumer.poll(kafkaPollIntervalMs);
+        if (logger.isDebugEnabled()) {
+	    	logger.debug("The following messages will NOT be processed if RESTART option is used for these partitions: " );
+	        for (ConsumerRecord<String, String> record : records) {
+	        	logger.debug("partition: {}, offset: {}, value: {}", record.partition(), record.offset(), record.value());
+	        }
+        }
         Set<TopicPartition> assignedTopicPartitions = consumer.assignment();
 
         //apply start offset options to partitions specified in 'consumer-start-options.config' file
@@ -171,8 +185,8 @@ public class ConsumerManager {
                 default:
                     break;
             }
-            logger.info("Offset for partition: {} is moved from : {} to {}", topicPartition.partition(), offsetBeforeSeek, consumer.position(topicPartition));
-            logger.info("Offset position during the startup for consumerId : {}, partition : {}, offset : {}", Thread.currentThread().getName(), topicPartition.partition(), consumer.position(topicPartition));
+            logger.info("Offset for partition: {} is moved from : {} to {}", 
+            		topicPartition.partition(), offsetBeforeSeek, consumer.position(topicPartition));
         }
         consumer.commitSync();
         consumer.close();
