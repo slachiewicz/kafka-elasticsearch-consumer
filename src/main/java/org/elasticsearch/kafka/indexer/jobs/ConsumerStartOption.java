@@ -1,7 +1,6 @@
 package org.elasticsearch.kafka.indexer.jobs;
 
 import org.apache.commons.lang3.StringUtils;
-import org.elasticsearch.kafka.indexer.jobs.ConsumerStartOption.StartFrom;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +10,7 @@ import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Created by Vitalii Cherniak on 04.10.16.
@@ -61,9 +61,9 @@ public class ConsumerStartOption {
 			return config;
 		}
 		File configFile = new File(configFilePath);
-		if ( !configFile.exists()) {
-			logger.warn("Consumer start options configuration file {} doesn't exist." + 
-				"Consumer will use 'RESTART' option by default", configFile.getPath());
+		if (!configFile.exists()) {
+			logger.warn("Consumer start options configuration file {} doesn't exist." +
+					"Consumer will use 'RESTART' option by default", configFile.getPath());
 			return config;
 		}
 		try {
@@ -83,23 +83,23 @@ public class ConsumerStartOption {
 		}
 
 		// check for default option: if it is empty, or RESTART - return an empty configs map - 
-		// all consumers will start with RESTART option for all partitions 		
+		// all consumers will start with RESTART option for all partitions
 		if (config.containsKey(DEFAULT)) {
 			ConsumerStartOption defaultOption = config.get(DEFAULT);
-			if (StartFrom.RESTART == defaultOption.getStartFrom()){
+			if (StartFrom.RESTART == defaultOption.getStartFrom()) {
 				return new HashMap<>();
 			}
 		}
-        // TODO  re-factor this code - when moving to separate DEFAULT config parameter
-        // check if there are any partitions that have RESTART option, while the DEFAULT is either EARLIEST or LATEST
-        // this mix is not allowed - we will use RESTART option for ALL partitions
-        for (ConsumerStartOption option: config.values()) {
-        	if (option.getStartFrom() == StartFrom.RESTART) {
-            	logger.info("invalid config - one of the parttions is set to use RESTART with non-RESTART default " + 
-            			"- consumers will start from RESTART for all partitions" );
-        		return new HashMap<>();
-        	}
-        }
+		// TODO  re-factor this code - when moving to separate DEFAULT config parameter
+		// check if there are any partitions that have RESTART option, while the DEFAULT is either EARLIEST or LATEST
+		// this mix is not allowed - we will use RESTART option for ALL partitions
+		for (ConsumerStartOption option : config.values()) {
+			if (option.getStartFrom() == StartFrom.RESTART) {
+				logger.info("invalid config - one of the partitions is set to use RESTART with non-RESTART default " +
+						"- consumers will start from RESTART for all partitions");
+				return new HashMap<>();
+			}
+		}
 		return config;
 	}
 
@@ -135,31 +135,17 @@ public class ConsumerStartOption {
 	}
 
 	@Override
-	public int hashCode() {
-		final int prime = 31;
-		int result = 1;
-		result = prime * result + partition;
-		result = prime * result + ((startFrom == null) ? 0 : startFrom.hashCode());
-		result = prime * result + (int) (startOffset ^ (startOffset >>> 32));
-		return result;
+	public boolean equals(Object o) {
+		if (this == o) return true;
+		if (!(o instanceof ConsumerStartOption)) return false;
+		ConsumerStartOption that = (ConsumerStartOption) o;
+		return partition == that.partition &&
+				startOffset == that.startOffset &&
+				startFrom == that.startFrom;
 	}
 
 	@Override
-	public boolean equals(Object obj) {
-		if (this == obj)
-			return true;
-		if (obj == null)
-			return false;
-		if (getClass() != obj.getClass())
-			return false;
-		ConsumerStartOption other = (ConsumerStartOption) obj;
-		if (partition != other.partition)
-			return false;
-		if (startFrom != other.startFrom)
-			return false;
-		if (startOffset != other.startOffset)
-			return false;
-		return true;
+	public int hashCode() {
+		return Objects.hash(partition, startFrom, startOffset);
 	}
-	/* */
 }
