@@ -2,12 +2,12 @@ package org.elasticsearch.kafka.indexer.jobs;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.kafka.indexer.jobs.StartOptionParser.StartOption;
 import org.elasticsearch.kafka.indexer.service.IMessageHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,7 +19,13 @@ import org.springframework.beans.factory.annotation.Value;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import javax.annotation.Resource;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -70,23 +76,27 @@ public class ConsumerManager {
     @Value("${kafka.consumer.property.prefix:consumer.kafka.property.}")
     private String consumerKafkaPropertyPrefix;
 
-    private String consumerStartOptionsConfig;
+    private String consumerStartOption;
+    private String consumerCustomStartOptionsFilePath;
 
     private ExecutorService consumersThreadPool = null;
     private List<ConsumerWorker> consumers = new ArrayList<>();
     private Properties kafkaProperties;
-    private Map<Integer, ConsumerStartOption> consumerStartOptions;
 
     private AtomicBoolean running = new AtomicBoolean(false);
 
     public ConsumerManager() {
     }
 
-    public void setConsumerStartOptionsConfig(String consumerStartOptionsConfig) {
-        this.consumerStartOptionsConfig = consumerStartOptionsConfig;
+    public void setConsumerStartOption(String consumerStartOption) {
+        this.consumerStartOption = consumerStartOption;
     }
 
-    private void init() {
+	public void setConsumerCustomStartOptionsFilePath(String consumerCustomStartOptionsFilePath) {
+		this.consumerCustomStartOptionsFilePath = consumerCustomStartOptionsFilePath;
+	}
+
+	private void init() {
         logger.info("init() is starting ....");
         kafkaProperties = new Properties();
         kafkaProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBrokersList);
@@ -100,8 +110,7 @@ public class ConsumerManager {
         consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
         extractAndSetKafkaProperties(applicationProperties, kafkaProperties, consumerKafkaPropertyPrefix);
         int consumerPoolCount = kafkaConsumerPoolCount;
-        consumerStartOptions = ConsumerStartOption.fromFile(consumerStartOptionsConfig);
-        determineOffsetForAllPartitionsAndSeek();
+        determineOffsetForAllPartitionsAndSeek(StartOptionParser.getStartOption(consumerStartOption), null);
         initConsumers(consumerPoolCount);
     }
 
@@ -143,51 +152,73 @@ public class ConsumerManager {
         logger.info("shutdownConsumers() finished");
     }
 
-    private void determineOffsetForAllPartitionsAndSeek() {
+    /**
+     * Determines start offsets for kafka partitions and seek to that offsets
+     * @param startOption start option
+     * @param consumer null for real consumer or {@link org.apache.kafka.clients.consumer.MockConsumer} for testing purposes
+     */
+    public void determineOffsetForAllPartitionsAndSeek(StartOption startOption, Consumer<String, String> consumer) {
         logger.info("in determineOffsetForAllPartitionsAndSeek(): ");
-        if (consumerStartOptions.isEmpty()) {
-        	logger.info("consumerStartOptions is empty or set to RESTART - consumers will start from RESTART for all partitions" );
+        if (startOption == StartOption.RESTART) {
+        	logger.info("startOption is empty or set to RESTART - consumers will start from RESTART for all partitions");
         	return;
         }
-        // we are handling LATEST, EARLIEST, or CUSTOM options only now
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(kafkaProperties);
+
+        // use real consumer if no other (e.g. mocked) is passed as parameter
+        if (consumer == null) {
+            consumer = new KafkaConsumer<>(kafkaProperties);
+        }
         consumer.subscribe(Arrays.asList(kafkaTopic));
 
         //Make init poll to get assigned partitions
-        ConsumerRecords<String, String> records = consumer.poll(kafkaPollIntervalMs);
-        if (logger.isDebugEnabled()) {
-	    	logger.debug("The following messages will NOT be processed if RESTART option is used for these partitions: " );
-	        for (ConsumerRecord<String, String> record : records) {
-	        	logger.debug("partition: {}, offset: {}, value: {}", record.partition(), record.offset(), record.value());
-	        }
-        }
-        Set<TopicPartition> assignedTopicPartitions = consumer.assignment();
+        consumer.poll(kafkaPollIntervalMs);
 
-        //apply start offset options to partitions specified in 'consumer-start-options.config' file
+        Set<TopicPartition> assignedTopicPartitions = consumer.assignment();
+        Map<TopicPartition, Long> offsetsBeforeSeek = new HashMap<>();
         for (TopicPartition topicPartition : assignedTopicPartitions) {
-            ConsumerStartOption startOption = consumerStartOptions.get(topicPartition.partition());
-            long offsetBeforeSeek = consumer.position(topicPartition);
-            if (startOption == null) {
-                startOption = consumerStartOptions.get(ConsumerStartOption.DEFAULT);
-            }
-            switch (startOption.getStartFrom()) {
-                case CUSTOM:
-                    consumer.seek(topicPartition, startOption.getStartOffset());
-                    break;
-                case EARLIEST:
-                    consumer.seekToBeginning(Arrays.asList(topicPartition));
-                    break;
-                case LATEST:
-                    consumer.seekToEnd(Arrays.asList(topicPartition));
-                    break;
-                case RESTART:
-                default:
-                    break;
-            }
-            logger.info("Offset for partition: {} is moved from : {} to {}", 
-            		topicPartition.partition(), offsetBeforeSeek, consumer.position(topicPartition));
+            offsetsBeforeSeek.put(topicPartition, consumer.position(topicPartition));
         }
+
+        switch (startOption) {
+            case CUSTOM:
+                Map<Integer, Long> customOffsetsMap = StartOptionParser.getCustomStartOffsets(consumerCustomStartOptionsFilePath);
+
+                //apply custom start offset options to partitions from file
+                if (customOffsetsMap.size() == assignedTopicPartitions.size()) {
+                    for (TopicPartition topicPartition : assignedTopicPartitions) {
+                        Long startOffset = customOffsetsMap.get(topicPartition.partition());
+                        if (startOffset == null) {
+                            logger.error("There is no custom start option for partition {}. Consumers will start from RESTART for all partitions", topicPartition.partition());
+                            consumer.close();
+                            return;
+                        }
+
+                        consumer.seek(topicPartition, startOffset);
+                    }
+                } else {
+                    logger.error("Defined custom consumer start options has missed partitions. Expected {} partitions but was defined {}. Consumers will start from RESTART for all partitions",
+                            assignedTopicPartitions.size(), customOffsetsMap.size());
+                    consumer.close();
+                    return;
+                }
+                break;
+            case EARLIEST:
+                consumer.seekToBeginning(assignedTopicPartitions);
+                break;
+            case LATEST:
+                consumer.seekToEnd(assignedTopicPartitions);
+                break;
+            default:
+                consumer.close();
+                return;
+        }
+
         consumer.commitSync();
+        for (TopicPartition topicPartition : assignedTopicPartitions) {
+            logger.info("Offset for partition: {} is moved from : {} to {}",
+                    topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), consumer.position(topicPartition));
+        }
+
         consumer.close();
     }
 
@@ -232,4 +263,19 @@ public class ConsumerManager {
         }
     }
 
+    public String getKafkaTopic() {
+        return kafkaTopic;
+    }
+
+    public void setKafkaTopic(String kafkaTopic) {
+        this.kafkaTopic = kafkaTopic;
+    }
+
+    public long getKafkaPollIntervalMs() {
+        return kafkaPollIntervalMs;
+    }
+
+    public void setKafkaPollIntervalMs(long kafkaPollIntervalMs) {
+        this.kafkaPollIntervalMs = kafkaPollIntervalMs;
+    }
 }
