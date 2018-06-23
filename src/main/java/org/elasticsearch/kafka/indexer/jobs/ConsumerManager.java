@@ -212,10 +212,9 @@ public class ConsumerManager {
         Map<TopicPartition, OffsetAndMetadata> offsetsToCommit = new HashMap<>();
         assignedTopicPartitions.forEach(partition -> offsetsToCommit.put(partition, new OffsetAndMetadata(consumer.position(partition))));
         consumer.commitSync(offsetsToCommit);
-        consumer.commitSync();
         for (TopicPartition topicPartition : assignedTopicPartitions) {
-            logger.info("Offset for partition: {} is moved from : {} to {}",
-                    topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), consumer.position(topicPartition));
+            logger.info("Offset for partition: {} is moved from : {} to {} with startOption: {}",
+                    topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), consumer.position(topicPartition), startOption);
         }
 
         consumer.close();
