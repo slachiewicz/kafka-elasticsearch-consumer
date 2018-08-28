@@ -57,7 +57,8 @@
 * `cd ./build/install/kafka-elasticsearch-consumer/bin` dir:
 ![](img/build-dir.png)
 
-* run `./kafka-elasticsearch-consumer -Dindexer.properties=$INDEXER_HOME/src/main/resources/config/kafka-es-indexer.properties -Dlogback.configurationFile=$INDEXER_HOME/src/main/resources/config/logback.xml` script
+* run `export KAFKA_ELASTICSEARCH_CONSUMER_OPTS="-Dindexer.properties=$INDEXER_HOME/src/main/resources/config/kafka-es-indexer.properties -Dlogback.configurationFile=$INDEXER_HOME/src/main/resources/config/logback.xml"` or modify `./kafka-elasticsearch-consumer` script to include `KAFKA_ELASTICSEARCH_CONSUMER_OPTS` variable
+* run `./kafka-elasticsearch-consumer` script
 
 # Versions
 
