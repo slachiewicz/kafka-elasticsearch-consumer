@@ -128,7 +128,7 @@ bintray {
     publish = true
     pkg {
         repo = 'bigdatadevs-repo'
-        name = 'kafka-elasticsearch-consumer'
+        name = 'org.elasticsearch.kafka.indexer:kafka-elasticsearch-consumer'
         userOrg = artifact_provider_org
         licenses = ['Apache-2.0']
         vcsUrl = artifact_provider_url
