@@ -57,11 +57,12 @@
 * `cd ./build/install/kafka-elasticsearch-consumer/bin` dir:
 ![](img/build-dir.png)
 
-* run `./kafka-elasticsearch-consumer -Dindexer.properties=$INDEXER_HOME/src/main/resources/config/kafka-es-indexer.properties -Dlogback.configurationFile=$INDEXER_HOME/src/main/resources/config/logback.xml` script
+* run `export KAFKA_ELASTICSEARCH_CONSUMER_OPTS="-Dindexer.properties=$INDEXER_HOME/src/main/resources/config/kafka-es-indexer.properties -Dlogback.configurationFile=$INDEXER_HOME/src/main/resources/config/logback.xml"` or modify `./kafka-elasticsearch-consumer` script to include `KAFKA_ELASTICSEARCH_CONSUMER_OPTS` variable
+* run `./kafka-elasticsearch-consumer` script
 
 # Versions
 
-* Kafka Version: 0.10.2.1
+* Kafka Version: 1.0.x
 
 * ElasticSearch: 6.2.x
 
@@ -80,9 +81,14 @@ You can specify your own logback config file via `-Dlogback.configurationFile=/a
 Indexer application Spring configuration is specified in the kafka-es-context-public.xml:
 [kafka-es-context.xml](src/main/resources/spring/kafka-es-context-public.xml)
 
-Consumer start options configuration file is specified in kafka-es-indexer-start-options.config - by default `RESTART` option is used for all partitions:
-[kafka-es-indexer-start-options.config](src/main/resources/config/kafka-es-indexer-start-options.config).
-You can specify you own configuration file via `-Doffsets.config.path=/abs-path/your-kafka-es-indexer-start-options.config`
+Consumer start options can be specified with system property `consumer.start.option`. The value of this property can be `RESTART`, `EARLIEST`, `LATEST`  which applied for all partitions or `CUSTOM` which requires additional property `consumer.custom.start.options.file`. The value of `consumer.custom.start.options.file` property is an absolute path to the custom start offsets configuration file. (Look to [kafka-es-indexer-custom-start-options.properties](src/main/resources/config/kafka-es-indexer-custom-start-options.properties)).
+By default `RESTART` option is used for all partitions.
+
+Examples:
+- `-Dconsumer.start.option=RESTART`
+- `-Dconsumer.start.option=LATEST`
+- `-Dconsumer.start.option=EARLIEST`
+- `-Dconsumer.start.option=CUSTOM -Dconsumer.custom.start.options.file=/abs-path/your-kafka-es-indexer-custom-start-options.properties`
 
 # Customization
 

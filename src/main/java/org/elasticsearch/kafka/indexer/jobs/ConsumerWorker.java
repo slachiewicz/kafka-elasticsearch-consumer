@@ -35,6 +35,7 @@ public class ConsumerWorker implements Runnable {
 			long pollIntervalMs, IMessageHandler messageHandler) {
 		this.messageHandler = messageHandler;
 		kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerId);
+		kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
 
 		this.consumerId = consumerId;
 		this.kafkaTopic = kafkaTopic;
@@ -56,7 +57,7 @@ public class ConsumerWorker implements Runnable {
 				int numProcessedMessages = 0;
 				int numSkippedIndexingMessages = 0;
 				int numMessagesInBatch = 0;
-				long offsetOfNextBatch = 0;
+				long pollStartMillis = 0L;
 
 				logger.debug("consumerId={}; about to call consumer.poll() ...", consumerId);
 				ConsumerRecords<String, String> records = consumer.poll(pollIntervalMs);
@@ -70,11 +71,11 @@ public class ConsumerWorker implements Runnable {
 					data.put("offset", record.offset());
 					data.put("value", record.value());
 
-					logger.debug("consumerId={}; recieved record: {}", consumerId, data);
+					logger.debug("consumerId={}; received record: {}", consumerId, data);
 					if (isPollFirstRecord) {
 						isPollFirstRecord = false;
-						logger.info("Start offset for partition {} in this poll : {}", record.partition(),
-								record.offset());
+						logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
+						pollStartMillis = System.currentTimeMillis();
 					}
 
 					try {
@@ -84,23 +85,27 @@ public class ConsumerWorker implements Runnable {
 						numProcessedMessages++;
 					} catch (Exception e) {
 						numSkippedIndexingMessages++;
-
-						logger.error("ERROR processing message {} - skipping it: {}", record.offset(), record.value(),
-								e);
-						FailedEventsLogger.logFailedToTransformEvent(record.offset(), e.getMessage(), record.value());
+                                                FailedEventsLogger.logFailedToTransformEvent(record.offset(), e, record.value());
 					}
 
-				}
 
-				logger.info(
-						"Total # of messages in this batch: {}; "
-								+ "# of successfully transformed and added to Index: {}; # of skipped from indexing: {}; offsetOfNextBatch: {}",
-						numMessagesInBatch, numProcessedMessages, numSkippedIndexingMessages, offsetOfNextBatch);
+				}
+				long timeBeforePost = System.currentTimeMillis();
 
 				// push to ES whole batch
 				boolean moveToNextBatch = false;
 				if (!records.isEmpty()) {				
 					moveToNextBatch = postToElasticSearch();
+					long timeToPost = System.currentTimeMillis() ;
+					double perMessageTimeMillis = (double) (timeToPost - pollStartMillis) / numProcessedMessages;
+                    logger.info("Previous poll snapshot: total-messages: {}, messages-processed: {}, messages-skipped: {}" +
+                                    ", time-to-create-batch: {} ms, time-to-post-millis: {} ms, time-to-post-millis/messages-processed: {} ms"
+                            , numMessagesInBatch
+							, numProcessedMessages
+							, numSkippedIndexingMessages
+							, timeBeforePost-pollStartMillis
+							, timeToPost-pollStartMillis
+							, perMessageTimeMillis) ;
 				}
 				
 				if (moveToNextBatch) {
@@ -110,20 +115,13 @@ public class ConsumerWorker implements Runnable {
 
 			}
 		} catch (WakeupException e) {
-			logger.warn("ConsumerWorker [consumerId={}] got WakeupException - exiting ... Exception: {}", consumerId,
-					e.getMessage());
+			logger.warn("ConsumerWorker [consumerId={}] got WakeupException - exiting ... Exception: {}", consumerId, e);
 			// ignore for shutdown
-		} 
-		
-		catch (IndexerESNotRecoverableException e){
-			logger.error("ConsumerWorker [consumerId={}] got IndexerESNotRecoverableException - exiting ... Exception: {}", consumerId,
-					e.getMessage());
-		}
-		catch (Exception e) {
-			// TODO handle all kinds of Kafka-related exceptions here - to stop
-			// / re-init the consumer when needed
-			logger.error("ConsumerWorker [consumerId={}] got Exception - exiting ... Exception: {}", consumerId,
-					e.getMessage());
+		} catch (IndexerESNotRecoverableException e){
+			logger.error("ConsumerWorker [consumerId={}] got IndexerESNotRecoverableException - exiting ... Exception: {}", consumerId, e);
+		} catch (Throwable e) {
+			// TODO handle all kinds of Kafka-related exceptions here - to stop / re-init the consumer when needed
+			logger.error("ConsumerWorker [consumerId={}] got Exception - exiting ... Exception: {}", consumerId, e);
 		} finally {
 			logger.warn("ConsumerWorker [consumerId={}] is shutting down ...", consumerId);
 			consumer.close();

@@ -38,8 +38,9 @@ ext {
     spring_version = '4.3.8.RELEASE'
     slf4j_version = '1.7.25'
     logback_version = '1.2.3'
-    kafka_version = '0.10.2.1'
+    kafka_version = '1.0.1'
     elasticsearch_version = '6.2.3'
+
 }
 
 configurations.all {
@@ -128,7 +129,7 @@ bintray {
     publish = true
     pkg {
         repo = 'bigdatadevs-repo'
-        name = 'kafka-elasticsearch-consumer'
+        name = 'org.elasticsearch.kafka.indexer:kafka-elasticsearch-consumer'
         userOrg = artifact_provider_org
         licenses = ['Apache-2.0']
         vcsUrl = artifact_provider_url

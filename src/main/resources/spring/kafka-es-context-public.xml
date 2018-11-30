@@ -2,16 +2,21 @@
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:context="http://www.springframework.org/schema/context"
-       xmlns:p="http://www.springframework.org/schema/p"
+       xmlns:p="http://www.springframework.org/schema/p" xmlns:util="http://www.springframework.org/schema/util"
        xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
-	                    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd">
+	                    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
 
     <import resource="common.xml"/>
 
     <context:component-scan base-package="org.elasticsearch.kafka.indexer.service"/>
+
+    <util:properties id="applicationProperties"
+                     ignore-resource-not-found="true"
+                     location="classpath:config/kafka-es-indexer.properties, file:${indexer.properties}"
+    />
     <context:property-placeholder
-            location="classpath:config/kafka-es-indexer.properties file:${indexer.properties}"
-            ignore-resource-not-found="true"/>
+            ignore-resource-not-found="true" properties-ref="applicationProperties"/>
+    <context:annotation-config />
 
     <bean id="messageHandler"
           class="org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl"
@@ -19,6 +24,7 @@
     />
 
     <bean id="kafkaESConsumerManager" class="org.elasticsearch.kafka.indexer.jobs.ConsumerManager"
-          p:consumerStartOptionsConfig="${offsets.config.path:${user.dir}/src/main/resources/config/kafka-es-indexer-start-options.config}"/>
+          p:consumerStartOption="${consumer.start.option:RESTART}"
+          p:consumerCustomStartOptionsFilePath="${consumer.custom.start.options.file:}"/>
 
 </beans>
