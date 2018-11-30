@@ -63,7 +63,7 @@
 
 * Kafka Version: 0.10.2.1
 
-* ElasticSearch: 5.5.x
+* ElasticSearch: 6.2.x
 
 * JDK 1.8
 

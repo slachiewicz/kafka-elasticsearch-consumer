@@ -11,7 +11,7 @@ import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.index.IndexRequestBuilder;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.InetSocketTransportAddress;
+import org.elasticsearch.common.transport.TransportAddress;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.kafka.indexer.exception.IndexerESNotRecoverableException;
 import org.elasticsearch.transport.client.PreBuiltTransportClient;
@@ -66,7 +66,7 @@ public class ElasticSearchClientService {
                 } catch (Throwable e){
                 	logger.error("ERROR parsing port from the ES config [{}]- using default port 9300", eachHostPort);
                 }
-                esTransportClient.addTransportAddress(new InetSocketTransportAddress(
+                esTransportClient.addTransportAddress(new TransportAddress(
                 		new InetSocketAddress(hostPortTokens[0].trim(), port)));
             }
             logger.info("ElasticSearch Client created and intialized OK");
