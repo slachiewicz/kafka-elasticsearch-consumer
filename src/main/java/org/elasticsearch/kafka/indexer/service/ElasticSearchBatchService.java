@@ -103,7 +103,7 @@ public class ElasticSearchBatchService {
             logger.error("Failed to post messages to ElasticSearch: " + e.getMessage(), e);
             throw new IndexerESRecoverableException(e);
         } 
-        logger.debug("Time to post messages to ElasticSearch: {} ms", bulkResponse.getTookInMillis());
+        logger.debug("Time to post messages to ElasticSearch: {} ms", bulkResponse.getIngestTookInMillis());
         if (bulkResponse.hasFailures()) {
             logger.error("Bulk Message Post to ElasticSearch has errors: {}",
                     bulkResponse.buildFailureMessage());
