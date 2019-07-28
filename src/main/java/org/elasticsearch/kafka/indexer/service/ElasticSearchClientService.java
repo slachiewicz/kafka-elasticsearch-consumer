@@ -87,8 +87,7 @@ public class ElasticSearchClientService {
 	public void reInitElasticSearch() throws InterruptedException, IndexerESNotRecoverableException {
 		for (int i=1; i<=numberOfEsIndexingRetryAttempts; i++ ){
 			Thread.sleep(esIndexingRetrySleepTimeMs);
-			//logger.warn("Re-trying to connect to ES, partition {}, try# {}", currentPartition, i);
-			logger.warn("Re-trying to connect to ES, try# {}", i);
+			logger.warn("Re-trying to connect to ES, try# {} out of {}", i, numberOfEsIndexingRetryAttempts);
 			try {
 				init();
 				// we succeeded - get out of the loop
@@ -106,7 +105,7 @@ public class ElasticSearchClientService {
 					logger.error("Re-trying connect to ES, try# {} - failed after the last retry", i);						
 					//throw new IndexerESException("ERROR: failed to connect to ES after max number of retiries, partition: " +
 					//		currentPartition);
-					throw new IndexerESNotRecoverableException("ERROR: failed to connect to ES after max number of retries ");
+					throw new IndexerESNotRecoverableException("ERROR: failed to connect to ES after max number of retries: " + numberOfEsIndexingRetryAttempts);
 				}
 			}
 		}
