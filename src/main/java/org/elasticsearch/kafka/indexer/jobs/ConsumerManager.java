@@ -1,10 +1,8 @@
 package org.elasticsearch.kafka.indexer.jobs;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -40,21 +38,11 @@ public class ConsumerManager {
 
     @Value("${kafka.consumer.source.topic:testTopic}")
     private String kafkaTopic;
-    @Value("${kafka.consumer.group.name:kafka-elasticsearch-consumer}")
-    private String consumerGroupName;
     @Value("${application.id:app1}")
     private String consumerInstanceName;
-    @Value("${kafka.consumer.brokers.list:localhost:9092}")
-    private String kafkaBrokersList;
-    @Value("${kafka.consumer.session.timeout.ms:10000}")
-    private int consumerSessionTimeoutMs;
     // interval in MS to poll Kafka brokers for messages, in case there were no messages during the previous interval
     @Value("${kafka.consumer.poll.interval.ms:10000}")
     private long kafkaPollIntervalMs;
-    // Max number of bytes to fetch in one poll request PER partition
-    // default is 1M = 1048576
-    @Value("${kafka.consumer.max.partition.fetch.bytes:1048576}")
-    private int maxPartitionFetchBytes;
     // if set to TRUE - enable logging timings of the event processing
     @Value("${is.perf.reporting.enabled:false}")
     private boolean isPerfReportingEnabled;
@@ -75,7 +63,6 @@ public class ConsumerManager {
     private String consumerCustomStartOptionsFilePath;
 
     private ExecutorService consumersThreadPool = null;
-    private List<ConsumerWorker> consumers = new ArrayList<>();
     private Properties kafkaProperties;
 
     private OffsetLoggingCallbackImpl offsetLoggingCallback;
@@ -87,19 +74,33 @@ public class ConsumerManager {
         Runtime.getRuntime().addShutdownHook(new Thread(this::shutdownConsumers));
     }
 
+    @PostConstruct
+    public void postConstruct() {
+        if (!running.getAndSet(true)) {
+            init();
+        } else {
+            logger.warn("Already running");
+        }
+    }
+
+    @PreDestroy
+    public void preDestroy() {
+        if (running.getAndSet(false)) {
+            shutdownConsumers();
+        } else {
+            logger.warn("Already stopped");
+        }
+    }
+
 	private void init() {
         logger.info("init() is starting ....");
-        kafkaProperties = new Properties();
-        kafkaProperties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBrokersList);
-        kafkaProperties.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroupName);
+        consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
+        kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
+        // add non-configurable properties
         kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        kafkaProperties.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, consumerSessionTimeoutMs);
-        kafkaProperties.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG, maxPartitionFetchBytes);
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
-        consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
-        CommonKafkaUtils.extractKafkaProperties(applicationProperties, kafkaProperties, consumerKafkaPropertyPrefix);
         if (messageProcessorObjectFactory == null) {
             logger.error("No messageProcessorObjectFactory is found - exiting");
             throw new RuntimeException ("No messageProcessorObjectFactory is found - exiting");
@@ -116,11 +117,9 @@ public class ConsumerManager {
         initConsumers(kafkaConsumerPoolCount);
     }
 
-    private synchronized void initConsumers(int consumerPoolCount) {
+    private void initConsumers(int consumerPoolCount) {
         logger.info("initConsumers() started, consumerPoolCount={}", consumerPoolCount);
-        consumers = new ArrayList<>();
         consumersThreadPool = new ConsumerThreadPool(consumerPoolCount);
-
         for (int consumerNumber = 0; consumerNumber < consumerPoolCount; consumerNumber++) {
             ConsumerWorker consumer = new ConsumerWorker(
                     consumerNumber, 
@@ -131,19 +130,16 @@ public class ConsumerManager {
                     messageProcessorObjectFactory.getObject(),
                     offsetLoggingCallback
                     );
-            consumers.add(consumer);
             consumersThreadPool.execute(consumer);
         }
     }
 
-    private synchronized void shutdownConsumers() {
+    private void shutdownConsumers() {
         logger.info("shutdownConsumers() started ....");
-
         if (consumersThreadPool != null) {
             consumersThreadPool.shutdown();
             consumersThreadPool = null;
         }
-
         logger.info("shutdownConsumers() finished");
     }
 
@@ -183,7 +179,6 @@ public class ConsumerManager {
                             consumer.close();
                             return;
                         }
-
                         consumer.seek(topicPartition, startOffset);
                     }
                 } else {
@@ -209,40 +204,17 @@ public class ConsumerManager {
         consumer.commitSync(offsetsToCommit);
         for (TopicPartition topicPartition : assignedTopicPartitions) {
             logger.info("Offset for partition: {} is moved from : {} to {} with startOption: {}",
-                    topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), consumer.position(topicPartition), startOption);
-            logger.info("Offset position during the startup for consumerId : {}, partition : {}, offset : {},  startOption: {}", Thread.currentThread().getName(), topicPartition.partition(), consumer.position(topicPartition), startOption);
+                topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), 
+                consumer.position(topicPartition), startOption);
+            logger.info("Offset position during the startup for consumerId : {}, partition : {}, " + 
+                "offset : {},  startOption: {}", Thread.currentThread().getName(), 
+                topicPartition.partition(), consumer.position(topicPartition), startOption);
         }
         consumer.close();
     }
 
     public Consumer<String, String> getConsumerInstance(Properties properties) {
         return new KafkaConsumer<>(properties);
-    }
-
-    @PostConstruct
-    public void postConstruct() {
-        start();
-    }
-
-    @PreDestroy
-    public void preDestroy() {
-        stop();
-    }
-
-    synchronized public void start() {
-        if (!running.getAndSet(true)) {
-            init();
-        } else {
-            logger.warn("Already running");
-        }
-    }
-
-    synchronized public void stop() {
-        if (running.getAndSet(false)) {
-            shutdownConsumers();
-        } else {
-            logger.warn("Already stopped");
-        }
     }
 
     public void setConsumerStartOption(String consumerStartOption) {

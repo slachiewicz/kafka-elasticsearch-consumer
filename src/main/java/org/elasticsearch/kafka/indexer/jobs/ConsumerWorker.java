@@ -68,7 +68,7 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
     public void run() {
         running.set(true);
         try {
-            logger.info("Starting YConsumerWorker, consumerId={}", consumerId);
+            logger.info("Starting ConsumerWorker, consumerId={}", consumerId);
             consumer.subscribe(Arrays.asList(kafkaTopic), offsetLoggingCallback);
             batchMessageProcessor.onStartup(consumerId);
             while (running.get()) {
