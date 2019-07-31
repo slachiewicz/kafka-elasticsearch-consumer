@@ -10,7 +10,7 @@
 
 # Introduction
 
-### **Kafka Standalone Consumer [Indexer] will read messages from Kafka, in batches, process and bulk-index them into ElasticSearch.**
+### **Kafka Standalone Consumer [Indexer] will read messages from Kafka, in batches, process and bulk-index them into ElasticSearch. One batch of messages is composed of all messages retrieved during one poll() call in the Kafka consumers**
 
 
 # How to use ? 
@@ -27,12 +27,13 @@
 
 5. modify `$INDEXER_HOME`/src/main/resources/spring/kafka-es-context-public.xml if needed
 
-	If you want to use custom IMessageHandler class - specify it in the following config:
+	If you want to use custom IBatchMessageProcessor class - specify it in the following config:
 	(make sure to only modify the class name, not the beans' name/scope)
 	
-	`<bean id="messageHandler"
-          class="org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl"
-          scope="prototype"/>`
+	`<bean id="messageProcessor"
+          class="org.elasticsearch.kafka.indexer.service.impl.examples.ESBatchMessageProcessorImpl"
+          scope="prototype"
+        p:elasticSearchBatchService-ref="elasticSearchBatchService"/>`
 
 6. build the app:
 
@@ -100,24 +101,28 @@ Indexer application can be easily customized. The main areas for customizations 
 	- you want to selectively index messages into ES based on some custom criteria
 * index name/type customization
 
-## ES message handling customization 
-Message handling can be customized by implementing the IMessageHandler interface :
+## batch message processing customization 
+Processing of each batch of messages, retrieved from Kafka in one poll() request, can be customized.
+This can be done by implementing the IBatchMessageProcessor interface :
 
-* `org.elasticsearch.kafka.indexer.service.IMessageHandler` is an interface that defines main methods for reading events from Kafka, processing them, and bulk-intexing into ElasticSearch. One can implement all or some of the methods if custom behavior is needed. You can customize:
-* `transformMessage(...)` method to transform an event from one format into another;
-* `addEventToBatch(...)` method - adding an event to specified (or custom ) index, with or without routing info
-* `postToElasticSearch(...)` method - most likely you won't need to customize this
+* `org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor` is an interface that defines main methods for reading events from Kafka, processing them, and bulk-intexing into ElasticSearch. One can implement all or some of the methods if custom behavior is needed. You can customize:
+* `processMessage(...)` method to parse, enrich or transform an event from one format into another; 
+** this is also where you could customize index names/ routing values 
+** when adding events to ES batches, if needed - as this method would call 
+**  `elasticSearchBatchService.addEventToBulkRequest(inputMessage, indexName, indexType, eventUUID, routingValue)` method
+* `beforeCommitCallBack(...)` method - this is where you can customize at which point offsets are stored into Kafka; by default - it returns TRUE on each call, meaning that offsets will be committed after one poll is successfully processed; you can have a different logic for committing/storing offsets if needed
+* there are more methods that could be customized - read the JavaDoc for the `org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor` interface 
 
-To do this customization, you can implement the IMessageHandler interface and inject the `ElasticSearchBatchService` into your implementation class and delegate most of the methods to the ElasticSearchBatchService class. ElasticSearchBatchService gives you basic batching operations.
+To do this customization, you can implement the IBatchMessageProcessor interface and inject the `ElasticSearchBatchService` into your implementation class and delegate most of the methods to the ElasticSearchBatchService class. ElasticSearchBatchService gives you basic batching operations.
 
-See `org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl` for an example of such customization. 
+See `org.elasticsearch.kafka.indexer.service.impl.examples.ESMessageMessageProcessorImpl` for an example of such customization. 
 
-* _**Don't forget to specify your custom message handler class in the kafka-es-context-public.xml file. By default, SimpleMessageHandlerImpl will be used**_
+* _**Don't forget to specify your custom message processor class in the kafka-es-context-public.xml file. By default, ESMessageMessageProcessorImpl will be used**_
 
 ## ES index name/type management customization 
-Index name and index type management/determination customization can be done by providing custom logic in your implementation of the IMessageHandler interface:
+Index name and index type management/determination customization can be done by providing custom logic in your implementation of the IBatchMessageProcessor interface:
 
-* `org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl` uses `elasticsearch.index.name` and `elasticsearch.index.type` values as configured in the kafka-es-indexer.properties file. If you want to use custom logic - add it to the `addEventToBatch(...)` method
+* `org.elasticsearch.kafka.indexer.service.impl.examples.ESMessageMessageProcessorImpl` uses `elasticsearch.index.name` and `elasticsearch.index.type` values as configured in the kafka-es-indexer.properties file. If you want to use a different custom logic - do it in the `processMessage(...)` method
 
 # Running as a Docker Container
 
