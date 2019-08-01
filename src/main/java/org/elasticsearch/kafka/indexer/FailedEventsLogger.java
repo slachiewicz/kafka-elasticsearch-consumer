@@ -11,17 +11,13 @@ public class FailedEventsLogger {
 		logger.error("General Error Processing Event: ERROR: {}, EVENT: {}", errorMsg, event);
 	}
 
-	public static void logFailedToPostToESEvent(String restResponse, String errorMsg){
-		logger.error("Error posting event to ES: REST response: {}, ERROR: {}", restResponse, errorMsg);
+	public static void logFailedEvent(String errorMsg, String event, long eventOffset){
+	    logger.error("Error Processing Event: ERROR: {}, EVENT: {}, OFFSET: {}", errorMsg, event, eventOffset);
 	}
 
-	public static void logFailedToTransformEvent(long offset, Throwable e, String event){
-		logger.error("Error transforming event: OFFSET: {}, ERROR: {}, EVENT: {}", 
-				offset, e.getMessage(), event, e);
-	}
-	public static void logFailedEvent(long startOffset,long endOffset, int partition ,String errorMsg, String event){
-		logger.error("Error transforming event: OFFSET: {} --> {} PARTITION: {},EVENT: {},ERROR: {} ",
-				startOffset,endOffset, partition,event,errorMsg);
+	public static void logFailedEventWithException(String errorMsg, String event, long eventOffset, Throwable e){
+	    logger.error("Error Processing Event: ERROR: {}, EVENT: {}, OFFSET: {}", 
+	        errorMsg, event, eventOffset, e);
 	}
 
 }

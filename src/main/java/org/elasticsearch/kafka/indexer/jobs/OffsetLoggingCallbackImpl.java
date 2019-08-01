@@ -1,4 +1,4 @@
-package org.elasticsearch.kafka.indexer.service;
+package org.elasticsearch.kafka.indexer.jobs;
 
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;

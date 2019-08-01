@@ -7,9 +7,6 @@
 	                    http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
 
     <import resource="common.xml"/>
-
-    <context:component-scan base-package="org.elasticsearch.kafka.indexer.service"/>
-
     <util:properties id="applicationProperties"
                      ignore-resource-not-found="true"
                      location="classpath:config/kafka-es-indexer.properties, file:${indexer.properties}"
@@ -18,13 +15,21 @@
             ignore-resource-not-found="true" properties-ref="applicationProperties"/>
     <context:annotation-config />
 
-    <bean id="messageHandler"
-          class="org.elasticsearch.kafka.indexer.service.impl.examples.SimpleMessageHandlerImpl"
-          scope="prototype"
+    <bean id="elasticSearchBatchService" class="org.elasticsearch.kafka.indexer.service.ElasticSearchBatchService"
+        scope="prototype"
+        p:elasticSearchClientService-ref="elasticSearchClientService"
     />
+    <bean id="messageProcessor"
+          class="org.elasticsearch.kafka.indexer.service.impl.examples.ESBatchMessageProcessorImpl"
+          scope="prototype"
+        p:elasticSearchBatchService-ref="elasticSearchBatchService"
+    />
+
+    <bean id="offsetLoggingCallback" class="org.elasticsearch.kafka.indexer.jobs.OffsetLoggingCallbackImpl"/>
 
     <bean id="kafkaESConsumerManager" class="org.elasticsearch.kafka.indexer.jobs.ConsumerManager"
           p:consumerStartOption="${consumer.start.option:RESTART}"
-          p:consumerCustomStartOptionsFilePath="${consumer.custom.start.options.file:}"/>
+          p:consumerCustomStartOptionsFilePath="${consumer.custom.start.options.file:}"
+          p:offsetLoggingCallback-ref="offsetLoggingCallback"/>
 
 </beans>
