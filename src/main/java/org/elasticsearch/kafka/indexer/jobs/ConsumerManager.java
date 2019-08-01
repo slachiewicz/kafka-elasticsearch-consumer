@@ -66,7 +66,7 @@ public class ConsumerManager {
     private Properties kafkaProperties;
 
     private OffsetLoggingCallbackImpl offsetLoggingCallback;
-    private AtomicBoolean running = new AtomicBoolean(false);
+    protected AtomicBoolean running = new AtomicBoolean(false);
     private int initCount = 0;
 
     public ConsumerManager() {
@@ -76,6 +76,7 @@ public class ConsumerManager {
 
     @PostConstruct
     public void postConstruct() {
+        logger.info("postConstruct() is starting ....");
         if (!running.getAndSet(true)) {
             init();
         } else {
@@ -85,6 +86,7 @@ public class ConsumerManager {
 
     @PreDestroy
     public void preDestroy() {
+        logger.info("preDestroy() is starting ....");
         if (running.getAndSet(false)) {
             shutdownConsumers();
         } else {
@@ -92,7 +94,7 @@ public class ConsumerManager {
         }
     }
 
-	private void init() {
+	protected void init() {
         logger.info("init() is starting ....");
         consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
         kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
@@ -130,11 +132,24 @@ public class ConsumerManager {
                     messageProcessorObjectFactory.getObject(),
                     offsetLoggingCallback
                     );
+            registerConsumerForJMX(consumer);
             consumersThreadPool.execute(consumer);
         }
     }
 
-    private void shutdownConsumers() {
+    /**
+     * This is a placeholder method - for those who want to extend this ConsumerManager class
+     * and expose JMX metrics for consumers;
+     * One could register each consumer instance with some JMX (or other) monitoring service;
+     * by default - it is a NO-OP
+     * 
+     * @param consumer
+     */
+    protected void registerConsumerForJMX(ConsumerWorker consumer) {
+        // NO-OP
+    }
+    
+    public void shutdownConsumers() {
         logger.info("shutdownConsumers() started ....");
         if (consumersThreadPool != null) {
             consumersThreadPool.shutdown();
