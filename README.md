@@ -3,6 +3,10 @@
 
 # Welcome to the kafka-elasticsearch-standalone-consumer wiki!
 
+NOTE: The 'master' branch is moving to the heavily refactored new V2.0 version.
+
+For the previous version, V1.0, use the 'version-1.0' branch
+
 ## Architecture of the kafka-elasticsearch-standalone-consumer [indexer]
 
 ![](img/IndexerV2Design.jpg)
