@@ -141,10 +141,13 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
         }
     }
  
-    private void exposeOffsetPositionToJmx(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
+    /**
+     * this method can be overwritten (implemented) in your own ConsumerManager 
+     * if you want to expose custom JMX metrics
+     * @param previousPollEndPosition
+     */
+    protected void exposeOffsetPositionToJmx(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
         // NO OP
-        // this method can be overwritten (implemented) in your own ConsumerManager 
-        // if you want to expose custom JMX metrics
     }
     
     private void commitOffsetsIfNeeded(boolean shouldCommitThisPoll, Map<TopicPartition, OffsetAndMetadata> partitionOffsetMap) {
