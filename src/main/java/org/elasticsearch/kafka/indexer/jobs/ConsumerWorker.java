@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.annotation.Resource;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -20,77 +22,85 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.RetriableCommitFailedException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.elasticsearch.kafka.indexer.CommonKafkaUtils;
 import org.elasticsearch.kafka.indexer.FailedEventsLogger;
 import org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 
-public class ConsumerWorker implements Runnable, AutoCloseable {
+public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 
     private static final Logger logger = LoggerFactory.getLogger(ConsumerWorker.class);
-    private IBatchMessageProcessor batchMessageProcessor;
-    private final KafkaConsumer<String, String> consumer;
-    private final String kafkaTopic;
-    private final int consumerId;
-    // interval in MS to poll Kafka brokers for messages, in case there were no
-    // messages during the previous interval
+    @Value("${kafka.consumer.source.topic:testTopic}")
+    private String kafkaTopic;
+    @Value("${application.id:app1}")
+    private String consumerInstanceName;
+    // interval in MS to poll Kafka brokers for messages, in case there were no messages during the previous interval
+    @Value("${kafka.consumer.poll.interval.ms:10000}")
     private long pollIntervalMs;
-    private OffsetLoggingCallbackImpl offsetLoggingCallback;
-    private AtomicBoolean running = new AtomicBoolean(false);
-    private String consumerGroupName;
+    @Value("${kafka.consumer.property.prefix:consumer.kafka.property.}")
+    private String consumerKafkaPropertyPrefix;
+    @Resource(name = "applicationProperties")
+    private Properties applicationProperties;
 
-    public ConsumerWorker(
-            int consumerId, 
-            String consumerInstanceName, 
-            String kafkaTopic, 
-            Properties kafkaProperties,
-            long pollIntervalMs, 
-            IBatchMessageProcessor batchMessageProcessor, 
-            OffsetLoggingCallbackImpl offsetLoggingCallback) {
-        this.batchMessageProcessor = batchMessageProcessor;
-        this.offsetLoggingCallback = offsetLoggingCallback;
-        this.consumerId = consumerId;
-        this.kafkaTopic = kafkaTopic;
-        this.pollIntervalMs = pollIntervalMs;
-        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerId);
+    private OffsetLoggingCallbackImpl offsetLoggingCallback;
+    private IBatchMessageProcessor batchMessageProcessor;
+    
+    private KafkaConsumer<String, String> consumer;
+    private AtomicBoolean running = new AtomicBoolean(false);
+    private int consumerInstanceNumber;
+
+    public ConsumerWorker() {        
+    }
+    
+    @Override
+    public void initConsumerInstance(int consumerInstanceNumber) {
+        logger.info("init() is starting ....");
+        this.consumerInstanceNumber = consumerInstanceNumber;
+        Properties kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
+        // add non-configurable properties
+        kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerInstanceNumber);
         kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer = new KafkaConsumer<>(kafkaProperties);
-        if (kafkaProperties != null && kafkaProperties.get(ConsumerConfig.GROUP_ID_CONFIG) != null) {
-            this.consumerGroupName = (String) kafkaProperties.get(ConsumerConfig.GROUP_ID_CONFIG);
-        }
-        this.consumerGroupName = StringUtils.defaultString(consumerGroupName, StringUtils.SPACE);
         logger.info(
-            "Created ConsumerWorker with properties: consumerId={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
-            consumerId, consumerInstanceName, kafkaTopic, kafkaProperties);
+            "Created ConsumerWorker with properties: consumerInstanceNumber={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
+            consumerInstanceNumber, consumerInstanceName, kafkaTopic, kafkaProperties);        
     }
-
+    
     @Override
     public void run() {
         running.set(true);
         try {
-            logger.info("Starting ConsumerWorker, consumerId={}", consumerId);
+            logger.info("Starting ConsumerWorker, consumerInstanceNumber={}", consumerInstanceNumber);
             consumer.subscribe(Arrays.asList(kafkaTopic), offsetLoggingCallback);
-            batchMessageProcessor.onStartup(consumerId);
+            batchMessageProcessor.onStartup(consumerInstanceNumber);
             while (running.get()) {
                 boolean isPollFirstRecord = true;
                 int numProcessedMessages = 0;
                 int numFailedMessages = 0;
                 int numMessagesInBatch = 0;
                 long pollStartMs = 0L;
-                logger.debug("consumerId={}; about to call consumer.poll() ...", consumerId);
+                logger.debug("consumerInstanceNumber={}; about to call consumer.poll() ...", consumerInstanceNumber);
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
-                batchMessageProcessor.onPollBeginCallBack(consumerId);
+                batchMessageProcessor.onPollBeginCallBack(consumerInstanceNumber);
                 for (ConsumerRecord<String, String> record : records) {
                     numMessagesInBatch++;
-                    logger.debug("consumerId={}; received record: partition: {}, offset: {}, value: {}",
-                            consumerId, record.partition(), record.offset(), record.value());
+                    logger.debug("consumerInstanceNumber={}; received record: partition: {}, offset: {}, value: {}",
+                            consumerInstanceNumber, record.partition(), record.offset(), record.value());
                     if (isPollFirstRecord) {
                         isPollFirstRecord = false;
                         logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
                         pollStartMs = System.currentTimeMillis();
                     }
                     try {
-                        boolean processedOK = batchMessageProcessor.processMessage(record, consumerId);
+                        boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceNumber);
                         if (processedOK) {
                             numProcessedMessages++;
                         } else {
@@ -104,10 +114,10 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
                     }
                 }
                 long endOfPollLoopMs = System.currentTimeMillis();
-                batchMessageProcessor.onPollEndCallback(consumerId);
+                batchMessageProcessor.onPollEndCallback(consumerInstanceNumber);
                 if (numMessagesInBatch > 0) {
                     Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
-                    boolean shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerId, previousPollEndPosition);
+                    boolean shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceNumber, previousPollEndPosition);
                     long afterProcessorCallbacksMs = System.currentTimeMillis();
                     commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
                     long afterOffsetsCommitMs = System.currentTimeMillis();
@@ -125,18 +135,18 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
                 }
             }
         } catch (WakeupException e) {
-            logger.warn("ConsumerWorker [consumerId={}] got WakeupException - exiting ...", consumerId, e);
+            logger.warn("ConsumerWorker [consumerInstanceNumber={}] got WakeupException - exiting ...", consumerInstanceNumber, e);
             // ignore for shutdown
         } catch (Throwable e) {
-            logger.error("ConsumerWorker [consumerId={}] got Throwable Exception - will exit ...", consumerId, e);
+            logger.error("ConsumerWorker [consumerInstanceNumber={}] got Throwable Exception - will exit ...", consumerInstanceNumber, e);
             throw new RuntimeException(e);
         } finally {
-            logger.warn("ConsumerWorker [consumerId={}] is shutting down ...", consumerId);
+            logger.warn("ConsumerWorker [consumerInstanceNumber={}] is shutting down ...", consumerInstanceNumber);
             offsetLoggingCallback.getPartitionOffsetMap()
                 .forEach((topicPartition, offset)
-                     -> logger.info("Offset position during the shutdown for consumerId : {}, partition : {}, offset : {}",
-                     consumerId, topicPartition.partition(), offset.offset()));
-            batchMessageProcessor.onShutdown(consumerId);
+                     -> logger.info("Offset position during the shutdown for consumerInstanceNumber : {}, partition : {}, offset : {}",
+                     consumerInstanceNumber, topicPartition.partition(), offset.offset()));
+            batchMessageProcessor.onShutdown(consumerInstanceNumber);
             consumer.close();
         }
     }
@@ -146,10 +156,14 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
      * if you want to expose custom JMX metrics
      * @param previousPollEndPosition
      */
-    protected void exposeOffsetPositionToJmx(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
+    public void exposeOffsetPositionToJmx(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
         // NO OP
     }
     
+    public void registerConsumerForJMX() {
+        // NO OP
+    }
+   
     private void commitOffsetsIfNeeded(boolean shouldCommitThisPoll, Map<TopicPartition, OffsetAndMetadata> partitionOffsetMap) {
         try {
             if (shouldCommitThisPoll) {
@@ -179,13 +193,13 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
 
     @Override
     public void close() {
-        logger.warn("ConsumerWorker [consumerId={}] shutdown() is called  - will call consumer.wakeup()", consumerId);
+        logger.warn("ConsumerWorker [consumerInstanceNumber={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceNumber);
         running.set(false);
         consumer.wakeup();
     }
 
     public void shutdown() {
-        logger.warn("ConsumerWorker [consumerId={}] shutdown() is called  - will call consumer.wakeup()", consumerId);
+        logger.warn("ConsumerWorker [consumerInstanceNumber={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceNumber);
         running.set(false);
         consumer.wakeup();
     }
@@ -194,7 +208,20 @@ public class ConsumerWorker implements Runnable, AutoCloseable {
         return offsetLoggingCallback.getPartitionOffsetMap();
     }
 
-    public int getConsumerId() {
-        return consumerId;
+    public int getConsumerInstanceNumber() {
+        return consumerInstanceNumber;
     }
+
+    public void setBatchMessageProcessor(IBatchMessageProcessor batchMessageProcessor) {
+        this.batchMessageProcessor = batchMessageProcessor;
+    }
+
+    public void setPollIntervalMs(long pollIntervalMs) {
+        this.pollIntervalMs = pollIntervalMs;
+    }
+
+    public void setOffsetLoggingCallback(OffsetLoggingCallbackImpl offsetLoggingCallback) {
+        this.offsetLoggingCallback = offsetLoggingCallback;
+    }
+
 }

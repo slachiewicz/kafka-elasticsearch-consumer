@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 public class CommonKafkaUtils {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(CommonKafkaUtils.class);
+    public static final String PROPERTY_SEPARATOR = ".";
 
     /**
      * Create a new kafkaProperties map and add application properties that start 
@@ -29,6 +30,9 @@ public class CommonKafkaUtils {
             LOGGER.info("No application kafka properties are found to set");
             return kafkaProperties;
         }
+        // normalize kafka properties prefix
+        kafkaPropertyPrefix = kafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? kafkaPropertyPrefix : kafkaPropertyPrefix + PROPERTY_SEPARATOR;
+
         for(Map.Entry <Object,Object> currentPropertyEntry :applicationProperties.entrySet()){
             String propertyName = currentPropertyEntry.getKey().toString();
             if(StringUtils.isNotBlank(propertyName) && propertyName.contains(kafkaPropertyPrefix)){
