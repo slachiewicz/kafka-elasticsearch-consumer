@@ -69,6 +69,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
         kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerInstanceNumber);
         kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer = new KafkaConsumer<>(kafkaProperties);
+        registerConsumerForJMX();
         logger.info(
             "Created ConsumerWorker with properties: consumerInstanceNumber={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
             consumerInstanceNumber, consumerInstanceName, kafkaTopic, kafkaProperties);        

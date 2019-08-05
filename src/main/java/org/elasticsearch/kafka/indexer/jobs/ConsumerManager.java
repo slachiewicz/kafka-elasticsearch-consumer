@@ -105,7 +105,6 @@ public class ConsumerManager {
         for (int consumerNumber = 0; consumerNumber < consumerPoolCount; consumerNumber++) {
             IConsumerWorker consumer = consumerWorkerObjectFactory.getObject();
             consumer.initConsumerInstance(consumerNumber);
-            consumer.registerConsumerForJMX();
             consumersThreadPool.execute(consumer);
         }
     }
