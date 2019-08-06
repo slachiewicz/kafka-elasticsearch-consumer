@@ -134,6 +134,8 @@ public class ConsumerManager {
         kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        String consumerClientId = consumerInstanceName + "-offset-reset";
+        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientId);
 
         Consumer<String, String> consumer = getConsumerInstance(kafkaProperties);
         consumer.subscribe(Arrays.asList(kafkaTopic));
@@ -188,7 +190,7 @@ public class ConsumerManager {
                 topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), 
                 consumer.position(topicPartition), startOption);
             logger.info("Offset position during the startup for consumerId : {}, partition : {}, " + 
-                "offset : {},  startOption: {}", Thread.currentThread().getName(), 
+                "offset : {},  startOption: {}", consumerClientId, 
                 topicPartition.partition(), consumer.position(topicPartition), startOption);
         }
         consumer.close();

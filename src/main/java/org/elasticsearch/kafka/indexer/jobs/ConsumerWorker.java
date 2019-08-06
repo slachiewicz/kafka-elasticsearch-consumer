@@ -52,7 +52,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     
     private KafkaConsumer<String, String> consumer;
     private AtomicBoolean running = new AtomicBoolean(false);
-    private int consumerInstanceNumber;
+    private int consumerInstanceId;
 
     public ConsumerWorker() {        
     }
@@ -60,48 +60,49 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     @Override
     public void initConsumerInstance(int consumerInstanceId) {
         logger.info("init() is starting ....");
-        this.consumerInstanceNumber = consumerInstanceId;
+        this.consumerInstanceId = consumerInstanceId;
         Properties kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
         // add non-configurable properties
         kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerInstanceId);
+        String consumerClientId = consumerInstanceName + "-" + consumerInstanceId;
+        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientId);
         kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer = new KafkaConsumer<>(kafkaProperties);
         registerConsumerForJMX();
         logger.info(
-            "Created ConsumerWorker with properties: consumerInstanceNumber={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
-            consumerInstanceId, consumerInstanceName, kafkaTopic, kafkaProperties);        
+            "Created ConsumerWorker with properties: consumerClientId={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
+            consumerClientId, consumerInstanceName, kafkaTopic, kafkaProperties);        
     }
     
     @Override
     public void run() {
         running.set(true);
         try {
-            logger.info("Starting ConsumerWorker, consumerInstanceNumber={}", consumerInstanceNumber);
+            logger.info("Starting ConsumerWorker, consumerInstanceId={}", consumerInstanceId);
             consumer.subscribe(Arrays.asList(kafkaTopic), offsetLoggingCallback);
-            batchMessageProcessor.onStartup(consumerInstanceNumber);
+            batchMessageProcessor.onStartup(consumerInstanceId);
             while (running.get()) {
                 boolean isPollFirstRecord = true;
                 int numProcessedMessages = 0;
                 int numFailedMessages = 0;
                 int numMessagesInBatch = 0;
                 long pollStartMs = 0L;
-                logger.debug("consumerInstanceNumber={}; about to call consumer.poll() ...", consumerInstanceNumber);
+                logger.debug("consumerInstanceId={}; about to call consumer.poll() ...", consumerInstanceId);
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
-                batchMessageProcessor.onPollBeginCallBack(consumerInstanceNumber);
+                batchMessageProcessor.onPollBeginCallBack(consumerInstanceId);
                 for (ConsumerRecord<String, String> record : records) {
                     numMessagesInBatch++;
-                    logger.debug("consumerInstanceNumber={}; received record: partition: {}, offset: {}, value: {}",
-                            consumerInstanceNumber, record.partition(), record.offset(), record.value());
+                    logger.debug("consumerInstanceId={}; received record: partition: {}, offset: {}, value: {}",
+                            consumerInstanceId, record.partition(), record.offset(), record.value());
                     if (isPollFirstRecord) {
                         isPollFirstRecord = false;
                         logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
                         pollStartMs = System.currentTimeMillis();
                     }
                     try {
-                        boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceNumber);
+                        boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceId);
                         if (processedOK) {
                             numProcessedMessages++;
                         } else {
@@ -115,10 +116,10 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
                     }
                 }
                 long endOfPollLoopMs = System.currentTimeMillis();
-                batchMessageProcessor.onPollEndCallback(consumerInstanceNumber);
+                batchMessageProcessor.onPollEndCallback(consumerInstanceId);
                 if (numMessagesInBatch > 0) {
                     Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
-                    boolean shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceNumber, previousPollEndPosition);
+                    boolean shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceId, previousPollEndPosition);
                     long afterProcessorCallbacksMs = System.currentTimeMillis();
                     commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
                     long afterOffsetsCommitMs = System.currentTimeMillis();
@@ -136,18 +137,18 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
                 }
             }
         } catch (WakeupException e) {
-            logger.warn("ConsumerWorker [consumerInstanceNumber={}] got WakeupException - exiting ...", consumerInstanceNumber, e);
+            logger.warn("ConsumerWorker [consumerInstanceId={}] got WakeupException - exiting ...", consumerInstanceId, e);
             // ignore for shutdown
         } catch (Throwable e) {
-            logger.error("ConsumerWorker [consumerInstanceNumber={}] got Throwable Exception - will exit ...", consumerInstanceNumber, e);
+            logger.error("ConsumerWorker [consumerInstanceId={}] got Throwable Exception - will exit ...", consumerInstanceId, e);
             throw new RuntimeException(e);
         } finally {
-            logger.warn("ConsumerWorker [consumerInstanceNumber={}] is shutting down ...", consumerInstanceNumber);
+            logger.warn("ConsumerWorker [consumerInstanceId={}] is shutting down ...", consumerInstanceId);
             offsetLoggingCallback.getPartitionOffsetMap()
                 .forEach((topicPartition, offset)
-                     -> logger.info("Offset position during the shutdown for consumerInstanceNumber : {}, partition : {}, offset : {}",
-                     consumerInstanceNumber, topicPartition.partition(), offset.offset()));
-            batchMessageProcessor.onShutdown(consumerInstanceNumber);
+                     -> logger.info("Offset position during the shutdown for consumerInstanceId : {}, partition : {}, offset : {}",
+                     consumerInstanceId, topicPartition.partition(), offset.offset()));
+            batchMessageProcessor.onShutdown(consumerInstanceId);
             consumer.close();
         }
     }
@@ -194,13 +195,13 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 
     @Override
     public void close() {
-        logger.warn("ConsumerWorker [consumerInstanceNumber={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceNumber);
+        logger.warn("ConsumerWorker [consumerInstanceId={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceId);
         running.set(false);
         consumer.wakeup();
     }
 
     public void shutdown() {
-        logger.warn("ConsumerWorker [consumerInstanceNumber={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceNumber);
+        logger.warn("ConsumerWorker [consumerInstanceId={}] shutdown() is called  - will call consumer.wakeup()", consumerInstanceId);
         running.set(false);
         consumer.wakeup();
     }
@@ -209,8 +210,8 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
         return offsetLoggingCallback.getPartitionOffsetMap();
     }
 
-    public int getConsumerInstanceNumber() {
-        return consumerInstanceNumber;
+    public int getConsumerInstanceId() {
+        return consumerInstanceId;
     }
 
     public void setBatchMessageProcessor(IBatchMessageProcessor batchMessageProcessor) {
