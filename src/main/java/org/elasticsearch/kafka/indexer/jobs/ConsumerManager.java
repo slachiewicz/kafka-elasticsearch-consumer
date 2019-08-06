@@ -102,10 +102,10 @@ public class ConsumerManager {
     private void initConsumers(int consumerPoolCount) {
         logger.info("initConsumers() started, consumerPoolCount={}", consumerPoolCount);
         consumersThreadPool = new ConsumerThreadPool(consumerPoolCount);
-        for (int consumerNumber = 0; consumerNumber < consumerPoolCount; consumerNumber++) {
-            IConsumerWorker consumer = consumerWorkerObjectFactory.getObject();
-            consumer.initConsumerInstance(consumerNumber);
-            consumersThreadPool.execute(consumer);
+        for (int consumerCounter = 0; consumerCounter < consumerPoolCount; consumerCounter++) {
+            IConsumerWorker consumerWorker = consumerWorkerObjectFactory.getObject();
+            consumerWorker.initConsumerInstance(consumerCounter);
+            consumersThreadPool.execute(consumerWorker);
         }
     }
     

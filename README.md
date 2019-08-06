@@ -14,7 +14,17 @@ For the previous version, V1.0, use the 'version-1.0' branch
 
 # Introduction
 
-### **Kafka Standalone Consumer [Indexer] will read messages from Kafka, in batches, process and bulk-index them into ElasticSearch. One batch of messages is composed of all messages retrieved during one poll() call in the Kafka consumers**
+### **Kafka Standalone Consumer reads messages from Kafka in batches, processes/transforms/enriches individual messages and processes the batch into a specified destination. **
+
+Currently, an example implemented destination is ElasticSearch. One batch of messages is composed of all messages retrieved during one poll() call in the Kafka consumers.
+
+**Main features:**
+
+* starting offset positions can be specified via configuration properties
+* IConsumerWorker interface-based consumers allow you to :
+** customize how offsets are exposed to other systems - like JMX/monitoring or external storage
+** customize when offsets are committed to Kafka - allowing you to specify your own logic/rules for re-processing of potentially failed events/batchs
+* IBatchMessageProcessor interface-based batch processors can be customized to process each batch of messages into any destination 
 
 
 # How to use ? 

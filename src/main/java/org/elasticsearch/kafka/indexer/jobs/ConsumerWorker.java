@@ -58,21 +58,21 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     }
     
     @Override
-    public void initConsumerInstance(int consumerInstanceNumber) {
+    public void initConsumerInstance(int consumerInstanceId) {
         logger.info("init() is starting ....");
-        this.consumerInstanceNumber = consumerInstanceNumber;
+        this.consumerInstanceNumber = consumerInstanceId;
         Properties kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
         // add non-configurable properties
         kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerInstanceNumber);
+        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerInstanceName + "-" + consumerInstanceId);
         kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer = new KafkaConsumer<>(kafkaProperties);
         registerConsumerForJMX();
         logger.info(
             "Created ConsumerWorker with properties: consumerInstanceNumber={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
-            consumerInstanceNumber, consumerInstanceName, kafkaTopic, kafkaProperties);        
+            consumerInstanceId, consumerInstanceName, kafkaTopic, kafkaProperties);        
     }
     
     @Override
@@ -122,7 +122,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
                     long afterProcessorCallbacksMs = System.currentTimeMillis();
                     commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
                     long afterOffsetsCommitMs = System.currentTimeMillis();
-                    exposeOffsetPositionToJmx(previousPollEndPosition);
+                    exposeOffsetPosition(previousPollEndPosition);
                     logger.info(
                         "Last poll snapshot: numMessagesInBatch: {}, numProcessedMessages: {}, numFailedMessages: {}, " + 
                         "timeToProcessLoop: {}ms, timeInMessageProcessor: {}ms, timeToCommit: {}ms, totalPollTime: {}ms",
@@ -157,7 +157,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
      * if you want to expose custom JMX metrics
      * @param previousPollEndPosition
      */
-    public void exposeOffsetPositionToJmx(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
+    public void exposeOffsetPosition(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) {
         // NO OP
     }
     
