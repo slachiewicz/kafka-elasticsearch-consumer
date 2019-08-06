@@ -20,7 +20,6 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.elasticsearch.kafka.indexer.CommonKafkaUtils;
-import org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectFactory;
@@ -34,38 +33,26 @@ import org.springframework.beans.factory.annotation.Value;
 public class ConsumerManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ConsumerManager.class);
-    public static final String PROPERTY_SEPARATOR = ".";
 
     @Value("${kafka.consumer.source.topic:testTopic}")
     private String kafkaTopic;
     @Value("${application.id:app1}")
     private String consumerInstanceName;
-    // interval in MS to poll Kafka brokers for messages, in case there were no messages during the previous interval
     @Value("${kafka.consumer.poll.interval.ms:10000}")
     private long kafkaPollIntervalMs;
-    // if set to TRUE - enable logging timings of the event processing
-    @Value("${is.perf.reporting.enabled:false}")
-    private boolean isPerfReportingEnabled;
-
-    @Value("${kafka.consumer.pool.count:3}")
-    private int kafkaConsumerPoolCount;
-
-    @Autowired
-    private ObjectFactory<IBatchMessageProcessor> messageProcessorObjectFactory;
-
-    @Resource(name = "applicationProperties")
-    private Properties applicationProperties;
-
     @Value("${kafka.consumer.property.prefix:consumer.kafka.property.}")
     private String consumerKafkaPropertyPrefix;
+    @Value("${kafka.consumer.pool.count:3}")
+    private int kafkaConsumerPoolCount;
+    @Resource(name = "applicationProperties")
+    private Properties applicationProperties;
+    @Autowired
+    private ObjectFactory<IConsumerWorker> consumerWorkerObjectFactory;
 
     private String consumerStartOption;
     private String consumerCustomStartOptionsFilePath;
 
     private ExecutorService consumersThreadPool = null;
-    private Properties kafkaProperties;
-
-    private OffsetLoggingCallbackImpl offsetLoggingCallback;
     protected AtomicBoolean running = new AtomicBoolean(false);
     private int initCount = 0;
 
@@ -96,16 +83,9 @@ public class ConsumerManager {
 
 	protected void init() {
         logger.info("init() is starting ....");
-        consumerKafkaPropertyPrefix = consumerKafkaPropertyPrefix.endsWith(PROPERTY_SEPARATOR) ? consumerKafkaPropertyPrefix : consumerKafkaPropertyPrefix + PROPERTY_SEPARATOR;
-        kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
-        // add non-configurable properties
-        kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
-        kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-
-        if (messageProcessorObjectFactory == null) {
-            logger.error("No messageProcessorObjectFactory is found - exiting");
-            throw new RuntimeException ("No messageProcessorObjectFactory is found - exiting");
+        if (consumerWorkerObjectFactory == null) {
+            logger.error("No consumerWorkerObjectFactory is found - exiting");
+            throw new RuntimeException ("No consumerWorkerObjectFactory is found - exiting");
         }
 
         initCount++;
@@ -122,31 +102,11 @@ public class ConsumerManager {
     private void initConsumers(int consumerPoolCount) {
         logger.info("initConsumers() started, consumerPoolCount={}", consumerPoolCount);
         consumersThreadPool = new ConsumerThreadPool(consumerPoolCount);
-        for (int consumerNumber = 0; consumerNumber < consumerPoolCount; consumerNumber++) {
-            ConsumerWorker consumer = new ConsumerWorker(
-                    consumerNumber, 
-                    consumerInstanceName, 
-                    kafkaTopic, 
-                    kafkaProperties, 
-                    kafkaPollIntervalMs, 
-                    messageProcessorObjectFactory.getObject(),
-                    offsetLoggingCallback
-                    );
-            registerConsumerForJMX(consumer);
-            consumersThreadPool.execute(consumer);
+        for (int consumerCounter = 0; consumerCounter < consumerPoolCount; consumerCounter++) {
+            IConsumerWorker consumerWorker = consumerWorkerObjectFactory.getObject();
+            consumerWorker.initConsumerInstance(consumerCounter);
+            consumersThreadPool.execute(consumerWorker);
         }
-    }
-
-    /**
-     * This is a placeholder method - for those who want to extend this ConsumerManager class
-     * and expose JMX metrics for consumers;
-     * One could register each consumer instance with some JMX (or other) monitoring service;
-     * by default - it is a NO-OP
-     * 
-     * @param consumer
-     */
-    protected void registerConsumerForJMX(ConsumerWorker consumer) {
-        // NO-OP
     }
     
     public void shutdownConsumers() {
@@ -168,6 +128,14 @@ public class ConsumerManager {
         	logger.info("startOption is empty or set to RESTART - consumers will start from RESTART for all partitions");
         	return;
         }
+
+        Properties kafkaProperties = CommonKafkaUtils.extractKafkaProperties(applicationProperties, consumerKafkaPropertyPrefix);
+        // add non-configurable properties
+        kafkaProperties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        kafkaProperties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        kafkaProperties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        String consumerClientId = consumerInstanceName + "-offset-reset";
+        kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientId);
 
         Consumer<String, String> consumer = getConsumerInstance(kafkaProperties);
         consumer.subscribe(Arrays.asList(kafkaTopic));
@@ -222,7 +190,7 @@ public class ConsumerManager {
                 topicPartition.partition(), offsetsBeforeSeek.get(topicPartition), 
                 consumer.position(topicPartition), startOption);
             logger.info("Offset position during the startup for consumerId : {}, partition : {}, " + 
-                "offset : {},  startOption: {}", Thread.currentThread().getName(), 
+                "offset : {},  startOption: {}", consumerClientId, 
                 topicPartition.partition(), consumer.position(topicPartition), startOption);
         }
         consumer.close();
@@ -256,7 +224,4 @@ public class ConsumerManager {
         this.kafkaPollIntervalMs = kafkaPollIntervalMs;
     }
 
-    public void setOffsetLoggingCallback(OffsetLoggingCallbackImpl offsetLoggingCallback) {
-        this.offsetLoggingCallback = offsetLoggingCallback;
-    }
 }

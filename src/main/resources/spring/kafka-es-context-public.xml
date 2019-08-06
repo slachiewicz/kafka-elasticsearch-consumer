@@ -27,9 +27,15 @@
 
     <bean id="offsetLoggingCallback" class="org.elasticsearch.kafka.indexer.jobs.OffsetLoggingCallbackImpl"/>
 
+    <bean id="consumerWorker"
+          class="org.elasticsearch.kafka.indexer.jobs.ConsumerWorker"
+          scope="prototype"
+        p:batchMessageProcessor-ref="messageProcessor"
+        p:offsetLoggingCallback-ref="offsetLoggingCallback"
+    />
+
     <bean id="kafkaESConsumerManager" class="org.elasticsearch.kafka.indexer.jobs.ConsumerManager"
           p:consumerStartOption="${consumer.start.option:RESTART}"
-          p:consumerCustomStartOptionsFilePath="${consumer.custom.start.options.file:}"
-          p:offsetLoggingCallback-ref="offsetLoggingCallback"/>
+          p:consumerCustomStartOptionsFilePath="${consumer.custom.start.options.file:}"/>
 
 </beans>
