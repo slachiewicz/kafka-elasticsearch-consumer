@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.annotation.Resource;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -28,8 +27,6 @@ import org.elasticsearch.kafka.indexer.FailedEventsLogger;
 import org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
@@ -70,7 +67,6 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
         kafkaProperties.put(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientId);
         kafkaProperties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         consumer = new KafkaConsumer<>(kafkaProperties);
-        registerConsumerForJMX();
         logger.info(
             "Created ConsumerWorker with properties: consumerClientId={}, consumerInstanceName={}, kafkaTopic={}, kafkaProperties={}",
             consumerClientId, consumerInstanceName, kafkaTopic, kafkaProperties);        
@@ -162,10 +158,6 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
         // NO OP
     }
     
-    public void registerConsumerForJMX() {
-        // NO OP
-    }
-   
     private void commitOffsetsIfNeeded(boolean shouldCommitThisPoll, Map<TopicPartition, OffsetAndMetadata> partitionOffsetMap) {
         try {
             if (shouldCommitThisPoll) {
