@@ -17,13 +17,7 @@ public interface IConsumerWorker extends Runnable {
      * @param previousPollEndPosition
      */
     public void exposeOffsetPosition(Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition);
-    
-    /**
-     * this method can be overwritten in a custom implementation of the Consumer - 
-     * to register this consumer with a JMX exporting service
-     */
-    public void registerConsumerForJMX();
-    
+        
     /**
      * Creates Kafka properties and an instance of a KafkaConsumer
      * 

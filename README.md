@@ -22,8 +22,11 @@ Currently, an example implemented destination is ElasticSearch. One batch of mes
 
 * starting offset positions can be specified via configuration properties
 * IConsumerWorker interface-based consumers allow you to :
+
 ** customize how offsets are exposed to other systems - like JMX/monitoring or external storage
+
 ** customize when offsets are committed to Kafka - allowing you to specify your own logic/rules for re-processing of potentially failed events/batchs
+
 * IBatchMessageProcessor interface-based batch processors can be customized to process each batch of messages into any destination 
 
 
