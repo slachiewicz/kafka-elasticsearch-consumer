@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.annotation.Resource;
 
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -24,6 +25,8 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.elasticsearch.kafka.indexer.CommonKafkaUtils;
 import org.elasticsearch.kafka.indexer.FailedEventsLogger;
+import org.elasticsearch.kafka.indexer.exception.ConsumerNonRecoverableException;
+import org.elasticsearch.kafka.indexer.exception.ConsumerRecoverableException;
 import org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +35,10 @@ import org.springframework.beans.factory.annotation.Value;
 public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 
     private static final Logger logger = LoggerFactory.getLogger(ConsumerWorker.class);
+    @Value("${kafka.consumer.poll.retry.limit:5}")
+    private int pollRetryLimit;
+    @Value("${kafka.consumer.poll.retry.delay.interval.ms:1000}")
+    private long pollRetryIntervalMs;
     @Value("${kafka.consumer.source.topic:testTopic}")
     private String kafkaTopic;
     @Value("${application.id:app1}")
@@ -47,7 +54,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     private OffsetLoggingCallbackImpl offsetLoggingCallback;
     private IBatchMessageProcessor batchMessageProcessor;
     
-    private KafkaConsumer<String, String> consumer;
+    private Consumer<String, String> consumer;
     private AtomicBoolean running = new AtomicBoolean(false);
     private int consumerInstanceId;
 
@@ -80,57 +87,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
             consumer.subscribe(Arrays.asList(kafkaTopic), offsetLoggingCallback);
             batchMessageProcessor.onStartup(consumerInstanceId);
             while (running.get()) {
-                boolean isPollFirstRecord = true;
-                int numProcessedMessages = 0;
-                int numFailedMessages = 0;
-                int numMessagesInBatch = 0;
-                long pollStartMs = 0L;
-                logger.debug("consumerInstanceId={}; about to call consumer.poll() ...", consumerInstanceId);
-                ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
-                batchMessageProcessor.onPollBeginCallBack(consumerInstanceId);
-                for (ConsumerRecord<String, String> record : records) {
-                    numMessagesInBatch++;
-                    logger.debug("consumerInstanceId={}; received record: partition: {}, offset: {}, value: {}",
-                            consumerInstanceId, record.partition(), record.offset(), record.value());
-                    if (isPollFirstRecord) {
-                        isPollFirstRecord = false;
-                        logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
-                        pollStartMs = System.currentTimeMillis();
-                    }
-                    try {
-                        boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceId);
-                        if (processedOK) {
-                            numProcessedMessages++;
-                        } else {
-                            FailedEventsLogger.logFailedEvent("Failed to process event: ", 
-                                record.value(), record.offset());
-                            numFailedMessages++;                            
-                        }
-                    } catch (Exception e) {
-                        FailedEventsLogger.logFailedEventWithException(e.getMessage(), record.value(), record.offset(), e);
-                        numFailedMessages++;
-                    }
-                }
-                long endOfPollLoopMs = System.currentTimeMillis();
-                batchMessageProcessor.onPollEndCallback(consumerInstanceId);
-                if (numMessagesInBatch > 0) {
-                    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
-                    boolean shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceId, previousPollEndPosition);
-                    long afterProcessorCallbacksMs = System.currentTimeMillis();
-                    commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
-                    long afterOffsetsCommitMs = System.currentTimeMillis();
-                    exposeOffsetPosition(previousPollEndPosition);
-                    logger.info(
-                        "Last poll snapshot: numMessagesInBatch: {}, numProcessedMessages: {}, numFailedMessages: {}, " + 
-                        "timeToProcessLoop: {}ms, timeInMessageProcessor: {}ms, timeToCommit: {}ms, totalPollTime: {}ms",
-                        numMessagesInBatch, numProcessedMessages, numFailedMessages,
-                        endOfPollLoopMs - pollStartMs,
-                        afterProcessorCallbacksMs - endOfPollLoopMs,
-                        afterOffsetsCommitMs - afterProcessorCallbacksMs,
-                        afterOffsetsCommitMs - pollStartMs);
-                } else {
-                    logger.info("No messages recieved during this poll");
-                }
+                processPoll();
             }
         } catch (WakeupException e) {
             logger.warn("ConsumerWorker [consumerInstanceId={}] got WakeupException - exiting ...", consumerInstanceId, e);
@@ -148,7 +105,142 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
             consumer.close();
         }
     }
- 
+
+	/**
+	 * perform one call to Kafka consumer's poll() and process all events from this poll
+	 * @throws Exception
+	 */
+	public void processPoll() throws Exception {
+		logger.debug("consumerInstanceId={}; about to call consumer.poll() ...", consumerInstanceId);
+		ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(pollIntervalMs));
+		batchMessageProcessor.onPollBeginCallBack(consumerInstanceId);
+		boolean isPollFirstRecord = true;
+		int numProcessedMessages = 0;
+		int numFailedMessages = 0;
+		int numMessagesInBatch = 0;
+		long pollStartMs = 0L;
+		for (ConsumerRecord<String, String> record : records) {
+		    numMessagesInBatch++;
+		    logger.debug("consumerInstanceId={}; received record: partition: {}, offset: {}, value: {}",
+		            consumerInstanceId, record.partition(), record.offset(), record.value());
+		    if (isPollFirstRecord) {
+		        isPollFirstRecord = false;
+		        logger.info("Start offset for partition {} in this poll : {}", record.partition(), record.offset());
+		        pollStartMs = System.currentTimeMillis();
+		    }
+		    try {
+		        boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceId);
+		        if (processedOK) {
+		            numProcessedMessages++;
+		        } else {
+		            FailedEventsLogger.logFailedEvent("Failed to process event: ", record.value(), record.offset());
+		            numFailedMessages++;                            
+		        }
+		    } catch (Exception e) {
+		        FailedEventsLogger.logFailedEventWithException(e.getMessage(), record.value(), record.offset(), e);
+		        numFailedMessages++;
+		    }
+		}
+		long endOfPollLoopMs = System.currentTimeMillis();
+		// deprecate this method and move logic to 'beforeVommitCallback()' in those consumers that use it 
+		batchMessageProcessor.onPollEndCallback(consumerInstanceId);
+		if (numMessagesInBatch > 0) {
+		    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
+		    boolean shouldCommitThisPoll = performCallbackWithRetry(records, previousPollEndPosition);
+		    long afterProcessorCallbacksMs = System.currentTimeMillis();
+		    commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
+		    long afterOffsetsCommitMs = System.currentTimeMillis();
+		    exposeOffsetPosition(previousPollEndPosition);
+		    logger.info(
+		        "Last poll snapshot: numMessagesInBatch: {}, numProcessedMessages: {}, numFailedMessages: {}, " + 
+		        "timeToProcessLoop: {}ms, timeInMessageProcessor: {}ms, timeToCommit: {}ms, totalPollTime: {}ms",
+		        numMessagesInBatch, numProcessedMessages, numFailedMessages,
+		        endOfPollLoopMs - pollStartMs,
+		        afterProcessorCallbacksMs - endOfPollLoopMs,
+		        afterOffsetsCommitMs - afterProcessorCallbacksMs,
+		        afterOffsetsCommitMs - pollStartMs);
+		} else {
+		    logger.info("No messages recieved during this poll");
+		}
+	}
+
+    /**
+     * After each poll() we call batchMessageProcessor.beforeCommitCallBack() method to do custom
+     * business/application logic and to decide whether the current poll() offsetts should be committed or not.
+     * If during this operation some recoverable exceptions happen - try to re-process the poll() events and
+     * re-do the beforeCommitCallBack() operation up until the configured number of times;
+     * Examples of recoverable exceptions could be: 
+     * --- Intermittent Timeout exceptions from Cassandra or Postgress or any other third-party called during this operation
+     *
+     * In such cases, in order to function properly, batchMessageProcessor.beforeCommitCallBack() method implementation has to 
+     * throw an instance of the ConsumerRecoverableException;
+     * 
+     * If some other non-recoverable exceptions happen - an instance of some other Exception should be thrown out;
+     * it will cause the consumer to shutdown
+     * 
+     * WARNING!!! it is very important to make sure that the event processing (the batchMessageProcessor.processMessage() method)
+     * is IDEMPOTENT! - meaning that it can safely re-process the same events multiple times
+     * 
+     * @param records
+     * @param previousPollEndPosition
+     * @return
+     * @throws Exception
+     */
+    public boolean performCallbackWithRetry(
+    	ConsumerRecords<String, String> records, 
+    	Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) throws Exception {
+    	boolean shouldCommitThisPoll = true;
+    	int retryAttempt = 0;
+ 		// only catch recoverable exception and try to re-process all records from the current poll();
+		// any other Exception thrown from this method will be propagated up and will cause the consumer to shutdown
+		boolean keepRetrying = true;
+		while (keepRetrying) {
+			try {
+	    		shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceId, previousPollEndPosition);
+	    		// no errors - exit this method
+	    		keepRetrying = false;
+	    	} catch (ConsumerRecoverableException e) {
+	    		// ignore this exception - it is recoverable - if the retry limit is not reached
+    			retryAttempt++;
+    			if (retryAttempt > pollRetryLimit) {
+    				keepRetrying = false;
+    				logger.error("FAILED to re-trying poll() - reached limit of retry attempts: retryAttempt = {} out of {};" + 
+    						" will throw ConsumerNonRecoverableException and shutdown; error: {}", 
+    						retryAttempt, pollRetryLimit, e.getMessage());
+    				throw new ConsumerNonRecoverableException(e.getMessage() + ": after retrying failed");
+    			} else {
+					logger.warn("Re-trying poll(); afer getting ConsumerRecoverableException: {}; retryAttempt = {} out of {};" + 
+							" will sleep for {}ms before re-trying", 
+							e.getMessage(), retryAttempt, pollRetryLimit, pollRetryIntervalMs);
+					// sleep for a configured delay and try to re-process events from the last poll() again
+					Thread.sleep(pollRetryIntervalMs);
+	    			reprocessPollEvents(retryAttempt, records);
+    			}
+	    	}
+		}
+    	return shouldCommitThisPoll;
+    }
+    
+    public void reprocessPollEvents(int retryAttempt, ConsumerRecords<String, String> records) {
+    	int numProcessedMessages = 0;
+    	int numFailedMessages = 0;
+    	// do not log failed events when reprocessing
+        for (ConsumerRecord<String, String> record : records) {
+            try {
+                boolean processedOK = batchMessageProcessor.processMessage(record, consumerInstanceId);
+                if (processedOK) {
+                    numProcessedMessages++;
+                } else {
+                    numFailedMessages++;                            
+                }
+            } catch (Exception e) {
+                numFailedMessages++;
+            }
+        }
+        logger.info("Poll re-processing snapshot, retryAttempt={}: numProcessedMessages: {}, numFailedMessages: {} ",
+        		retryAttempt, numProcessedMessages, numFailedMessages);   	
+    }
+    
     /**
      * this method can be overwritten (implemented) in your own ConsumerManager 
      * if you want to expose custom JMX metrics
@@ -217,5 +309,33 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     public void setOffsetLoggingCallback(OffsetLoggingCallbackImpl offsetLoggingCallback) {
         this.offsetLoggingCallback = offsetLoggingCallback;
     }
+
+	public int getPollRetryLimit() {
+		return pollRetryLimit;
+	}
+
+	public void setPollRetryLimit(int pollRetryLimit) {
+		this.pollRetryLimit = pollRetryLimit;
+	}
+
+	public long getPollRetryIntervalMs() {
+		return pollRetryIntervalMs;
+	}
+
+	public void setPollRetryIntervalMs(long pollRetryIntervalMs) {
+		this.pollRetryIntervalMs = pollRetryIntervalMs;
+	}
+
+	public void setConsumer(Consumer<String, String> consumer) {
+		this.consumer = consumer;
+	}
+
+	public void setConsumerInstanceId(int consumerInstanceId) {
+		this.consumerInstanceId = consumerInstanceId;
+	}
+
+	public void setKafkaTopic(String kafkaTopic) {
+		this.kafkaTopic = kafkaTopic;
+	}
 
 }

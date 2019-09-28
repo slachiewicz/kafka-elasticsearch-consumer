@@ -4,19 +4,19 @@
  */
 package org.elasticsearch.kafka.indexer.exception;
 
-public class IndexerESException extends Exception {
+public class ConsumerNonRecoverableException extends Exception {
 
 	/**
 	 * 
 	 */
-	public IndexerESException() {
+	public ConsumerNonRecoverableException() {
 		// TODO Auto-generated constructor stub
 	}
 
 	/**
 	 * @param message
 	 */
-	public IndexerESException(String message) {
+	public ConsumerNonRecoverableException(String message) {
 		super(message);
 		// TODO Auto-generated constructor stub
 	}
@@ -24,7 +24,7 @@ public class IndexerESException extends Exception {
 	/**
 	 * @param cause
 	 */
-	public IndexerESException(Throwable cause) {
+	public ConsumerNonRecoverableException(Throwable cause) {
 		super(cause);
 		// TODO Auto-generated constructor stub
 	}
@@ -33,7 +33,7 @@ public class IndexerESException extends Exception {
 	 * @param message
 	 * @param cause
 	 */
-	public IndexerESException(String message, Throwable cause) {
+	public ConsumerNonRecoverableException(String message, Throwable cause) {
 		super(message, cause);
 		// TODO Auto-generated constructor stub
 	}
@@ -44,7 +44,7 @@ public class IndexerESException extends Exception {
 	 * @param enableSuppression
 	 * @param writableStackTrace
 	 */
-	public IndexerESException(String message, Throwable cause,
+	public ConsumerNonRecoverableException(String message, Throwable cause,
 			boolean enableSuppression, boolean writableStackTrace) {
 		super(message, cause, enableSuppression, writableStackTrace);
 		// TODO Auto-generated constructor stub
