@@ -1,6 +1,6 @@
 /**
   * @author marinapopova
-  * Sep 25, 2015
+  * Sep 28, 2019
  */
 package org.elasticsearch.kafka.indexer.exception;
 
