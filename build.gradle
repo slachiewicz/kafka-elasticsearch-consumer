@@ -21,7 +21,7 @@ group = 'org.elasticsearch.kafka.indexer'
 version = release + '.' + build
 mainClassName = "org.elasticsearch.kafka.indexer.KafkaESIndexerProcess"
 
-description = "kafka-elasticsearch-consumer"
+description = "kafka-es-consumer"
 def artifact_provider_url       = hasProperty('artifact_provider_url') ? artifact_provider_url : System.getenv('artifact_provider_url')
 def artifact_provider_user      = hasProperty('artifact_provider_user') ? artifact_provider_user : System.getenv('artifact_provider_user')
 def artifact_provider_org       = hasProperty('artifact_provider_org') ? artifact_provider_org : System.getenv('artifact_provider_org')
