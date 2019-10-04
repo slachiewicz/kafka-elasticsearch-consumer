@@ -41,18 +41,6 @@ public interface IBatchMessageProcessor {
      */
     public void onPollBeginCallBack(int consumerId) throws Exception;
 
-	/**
-	 * callback method - called after all events from the last poll() were parsed/added to the batch
-	 * but before any batch processing is done;
-	 * can be used for additional logging or JMX metrics exports if needed
-	 * usually it is NO-OP
-	 * 
-	 * @param consumerId
-	 * @return isBatchCompleted: if true, offsets should be committed ; if FALSE - not
-	 * @throws Exception
-	 */
-	public boolean onPollEndCallback(int consumerId) throws Exception;
-
     /**
      * callback method - called after all events from the last poll() were processed AND before the 
      * offsets for this poll() are about to be committed;
@@ -70,7 +58,7 @@ public interface IBatchMessageProcessor {
      * @return boolean shouldCommitThisPoll
      * @throws Exception
      */
-	public boolean beforeCommitCallBack(int consumerId, Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition) throws Exception;
+	public boolean onPollEndCallBack(int consumerId, Map<TopicPartition, OffsetAndMetadata> pollEndPosition) throws Exception;
 
 	public void onStartup(int consumerId) throws Exception;
 

@@ -39,6 +39,8 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     private int pollRetryLimit;
     @Value("${kafka.consumer.poll.retry.delay.interval.ms:1000}")
     private long pollRetryIntervalMs;
+    @Value("${kafka.consumer.ignore.overlimit.recoverable.errors:false}")
+    private boolean ignoreOverlimitRecoverableErrors;
     @Value("${kafka.consumer.source.topic:testTopic}")
     private String kafkaTopic;
     @Value("${application.id:app1}")
@@ -142,12 +144,10 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 		    }
 		}
 		long endOfPollLoopMs = System.currentTimeMillis();
-		// deprecate this method and move logic to 'beforeVommitCallback()' in those consumers that use it 
-		batchMessageProcessor.onPollEndCallback(consumerInstanceId);
+	    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
+	    boolean shouldCommitThisPoll = performCallbackWithRetry(records, previousPollEndPosition);
+	    long afterProcessorCallbacksMs = System.currentTimeMillis();
 		if (numMessagesInBatch > 0) {
-		    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
-		    boolean shouldCommitThisPoll = performCallbackWithRetry(records, previousPollEndPosition);
-		    long afterProcessorCallbacksMs = System.currentTimeMillis();
 		    commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
 		    long afterOffsetsCommitMs = System.currentTimeMillis();
 		    exposeOffsetPosition(previousPollEndPosition);
@@ -196,7 +196,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 		boolean keepRetrying = true;
 		while (keepRetrying) {
 			try {
-	    		shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceId, previousPollEndPosition);
+	    		shouldCommitThisPoll = batchMessageProcessor.onPollEndCallBack(consumerInstanceId, previousPollEndPosition);
 	    		// no errors - exit this method
 	    		keepRetrying = false;
 	    	} catch (ConsumerRecoverableException e) {
@@ -204,12 +204,18 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
     			retryAttempt++;
     			if (retryAttempt > pollRetryLimit) {
     				keepRetrying = false;
-    				logger.error("FAILED to re-trying poll() - reached limit of retry attempts: retryAttempt = {} out of {};" + 
-    						" will throw ConsumerNonRecoverableException and shutdown; error: {}", 
-    						retryAttempt, pollRetryLimit, e.getMessage());
-    				throw new ConsumerNonRecoverableException(e.getMessage() + ": after retrying failed");
+    				if (ignoreOverlimitRecoverableErrors) {
+    					logger.warn("FAILED to re-process poll(): {} - reached limit of retry attempts: retryAttempt = {} out of {};" + 
+        						"; ignoreOverlimitRecoverableErrors=TRUE - ignoring and continuing with the next poll()", 
+        						e.getMessage(), retryAttempt, pollRetryLimit);
+    				} else {
+    					logger.error("FAILED to re-process poll(): {} - reached limit of retry attempts: retryAttempt = {} out of {};" + 
+    						" ignoreOverlimitRecoverableErrors=FALSE - will throw ConsumerNonRecoverableException and shutdown", 
+    						e.getMessage(), retryAttempt, pollRetryLimit);
+    					throw new ConsumerNonRecoverableException(e.getMessage() + ": after retrying failed");
+    				}
     			} else {
-					logger.warn("Re-trying poll(); afer getting ConsumerRecoverableException: {}; retryAttempt = {} out of {};" + 
+					logger.warn("Re-trying poll() afer getting ConsumerRecoverableException: {}; retryAttempt = {} out of {};" + 
 							" will sleep for {}ms before re-trying", 
 							e.getMessage(), retryAttempt, pollRetryLimit, pollRetryIntervalMs);
 					// sleep for a configured delay and try to re-process events from the last poll() again
@@ -336,6 +342,10 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 
 	public void setKafkaTopic(String kafkaTopic) {
 		this.kafkaTopic = kafkaTopic;
+	}
+
+	public void setIgnoreOverlimitRecoverableErrors(boolean ignoreOverlimitRecoverableErrors) {
+		this.ignoreOverlimitRecoverableErrors = ignoreOverlimitRecoverableErrors;
 	}
 
 }
