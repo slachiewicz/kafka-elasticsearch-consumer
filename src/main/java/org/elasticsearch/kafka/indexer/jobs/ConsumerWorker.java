@@ -144,12 +144,10 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 		    }
 		}
 		long endOfPollLoopMs = System.currentTimeMillis();
-		// deprecate this method and move logic to 'beforeVommitCallback()' in those consumers that use it 
-		batchMessageProcessor.onPollEndCallback(consumerInstanceId);
+	    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
+	    boolean shouldCommitThisPoll = performCallbackWithRetry(records, previousPollEndPosition);
+	    long afterProcessorCallbacksMs = System.currentTimeMillis();
 		if (numMessagesInBatch > 0) {
-		    Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition = getPreviousPollEndPosition();
-		    boolean shouldCommitThisPoll = performCallbackWithRetry(records, previousPollEndPosition);
-		    long afterProcessorCallbacksMs = System.currentTimeMillis();
 		    commitOffsetsIfNeeded(shouldCommitThisPoll, previousPollEndPosition);
 		    long afterOffsetsCommitMs = System.currentTimeMillis();
 		    exposeOffsetPosition(previousPollEndPosition);
@@ -198,7 +196,7 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 		boolean keepRetrying = true;
 		while (keepRetrying) {
 			try {
-	    		shouldCommitThisPoll = batchMessageProcessor.beforeCommitCallBack(consumerInstanceId, previousPollEndPosition);
+	    		shouldCommitThisPoll = batchMessageProcessor.onPollEndCallBack(consumerInstanceId, previousPollEndPosition);
 	    		// no errors - exit this method
 	    		keepRetrying = false;
 	    	} catch (ConsumerRecoverableException e) {

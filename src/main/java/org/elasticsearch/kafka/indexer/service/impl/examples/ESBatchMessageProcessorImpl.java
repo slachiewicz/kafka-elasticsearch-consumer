@@ -61,19 +61,10 @@ public class ESBatchMessageProcessorImpl implements IBatchMessageProcessor {
     }
 
     /* (non-Javadoc)
-     * @see org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor#onPollEndCallback(int)
-     */
-    @Override
-    public boolean onPollEndCallback(int consumerId) throws Exception {
-        // NO OP
-        return false;
-    }
-
-    /* (non-Javadoc)
      * @see org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor#beforeCommitCallBack(int, java.util.Map)
      */
     @Override
-    public boolean beforeCommitCallBack(int consumerId, Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition)
+    public boolean onPollEndCallBack(int consumerId, Map<TopicPartition, OffsetAndMetadata> previousPollEndPosition)
             throws Exception {
         boolean commitOffset = true;
         try {
