@@ -10,6 +10,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.elasticsearch.kafka.indexer.exception.ConsumerRecoverableException;
 import org.elasticsearch.kafka.indexer.exception.IndexerESRecoverableException;
 import org.elasticsearch.kafka.indexer.service.ElasticSearchBatchService;
 import org.elasticsearch.kafka.indexer.service.IBatchMessageProcessor;
@@ -79,10 +80,10 @@ public class ESBatchMessageProcessorImpl implements IBatchMessageProcessor {
             elasticSearchBatchService.postToElasticSearch();
         } catch (IndexerESRecoverableException e) {
             // if this is a re-coverable exception - do NOT commit the offsets, let events 
-            // form this poll be re-processed
+            // from this poll be re-processed
             commitOffset = false;
-            logger.error("Error posting messages to Elastic Search - will re-try processing the batch; error: {}",
-                    e.getMessage());
+            logger.error("Recoverable Error posting messages to Elastic Search: {}", e.getMessage());
+            throw new ConsumerRecoverableException("Error posting messages to Elastic Search", e);
         }
         return commitOffset;
     }
