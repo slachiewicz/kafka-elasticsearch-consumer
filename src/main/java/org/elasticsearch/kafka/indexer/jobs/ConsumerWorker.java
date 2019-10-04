@@ -346,4 +346,8 @@ public class ConsumerWorker implements AutoCloseable, IConsumerWorker {
 		this.kafkaTopic = kafkaTopic;
 	}
 
+	public void setIgnoreOverlimitRecoverableErrors(boolean ignoreOverlimitRecoverableErrors) {
+		this.ignoreOverlimitRecoverableErrors = ignoreOverlimitRecoverableErrors;
+	}
+
 }

@@ -187,15 +187,15 @@ public class ConsumerWorkerTest {
 	
 	/**
 	 * Use case: call to beforeCommitCallBack() throws more than a configured MAX limit of
-	 * recoverable exceptions ==> consumer should fail and exit
+	 * recoverable exceptions, and ignoreOverlimitRecoverableErrors = FALSE  ==> consumer should fail and exit
 	 * 
 	 * @throws Exception
 	 */
 	@Test(expected = ConsumerNonRecoverableException.class)
 	public void testProcessPoll_beforeCommitCall_RecoverableException_overlimit() throws Exception {
-		long nextToReadOffset = startOffset + numberOfRecords + 1;	
 		int pollRetryLimit = 2;
 		long pollRetryIntervalMs = 2l;
+		consumerWorker.setIgnoreOverlimitRecoverableErrors(false);
 		consumerWorker.setPollRetryLimit(pollRetryLimit);
 		consumerWorker.setPollRetryIntervalMs(pollRetryIntervalMs);
 	    for (ConsumerRecord<String, String> consumerRecord: testRecords) {
@@ -207,6 +207,36 @@ public class ConsumerWorkerTest {
 			.thenThrow(new ConsumerRecoverableException("Recoverable exception from unit test #3 - over the limit"));
 		consumerWorker.processPoll();
 		// ConsumerNonRecoverableException should be thrown out
+	}
+
+	/**
+	 * Use case: call to beforeCommitCallBack() throws more than a configured MAX limit of
+	 * recoverable exceptions, and ignoreOverlimitRecoverableErrors = TRUE  ==> 
+	 * offsets should not be committed, but the execution flow should not fail
+	 * 
+	 * @throws Exception
+	 */
+	@Test()
+	public void testProcessPoll_beforeCommitCall_RecoverableException_overlimit_ignored() throws Exception {
+		long expectedCommittedOffset = startOffset + numberOfRecords + 1;		
+		long nextToReadOffset = expectedCommittedOffset;		
+		int pollRetryLimit = 2;
+		long pollRetryIntervalMs = 2l;
+		consumerWorker.setIgnoreOverlimitRecoverableErrors(true);
+		consumerWorker.setPollRetryLimit(pollRetryLimit);
+		consumerWorker.setPollRetryIntervalMs(pollRetryIntervalMs);
+	    for (ConsumerRecord<String, String> consumerRecord: testRecords) {
+			Mockito.when(mockedBatchMessageProcessor.processMessage(consumerRecord, consumerInstanceId)).thenReturn(true);
+	    }
+		Mockito.when(mockedBatchMessageProcessor.beforeCommitCallBack(Mockito.anyInt(), Mockito.anyMap()))
+			.thenThrow(new ConsumerRecoverableException("Recoverable exception from unit test #1"))
+			.thenReturn(true);
+		consumerWorker.processPoll();
+		// committed and next to read offsets should be the same in this case
+		Assert.assertEquals(nextToReadOffset, mockedConsumer.position(topicPartition0));
+		OffsetAndMetadata committedOffsetInfo = mockedConsumer.committed(topicPartition0);
+		Assert.assertNotNull(committedOffsetInfo);
+		Assert.assertEquals(expectedCommittedOffset, committedOffsetInfo.offset());
 	}
 
 }
