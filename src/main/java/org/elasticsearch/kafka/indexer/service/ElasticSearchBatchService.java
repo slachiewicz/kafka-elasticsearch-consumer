@@ -32,6 +32,7 @@ public class ElasticSearchBatchService {
     private static final Logger logger = LoggerFactory.getLogger(ElasticSearchBatchService.class);
     private static final String SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE";
     private static final String INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR";
+
     private BulkRequest bulkRequest;
     private Set<String> indexNames = new HashSet<>();
    
@@ -155,4 +156,9 @@ public class ElasticSearchBatchService {
     public void setElasticSearchClientService(ElasticSearchClientService elasticSearchClientService) {
         this.elasticSearchClientService = elasticSearchClientService;
     }
+
+    protected BulkRequest getBulkRequest() {
+        return bulkRequest;
+    }
+
 }
