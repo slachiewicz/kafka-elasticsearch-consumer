@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
@@ -119,7 +118,7 @@ public class ElasticSearchBatchService {
             logger.error("Bulk Message Post to ElasticSearch has errors: {}",
                     bulkResponse.buildFailureMessage());
             int failedCount = 0;
-            Iterator<BulkItemResponse> bulkRespItr = bulkResponse.iterator();
+       
             //TODO research if there is a way to get all failed messages without iterating over
             // ALL messages in this bulk post request
             for (BulkItemResponse bulkItemResponse : bulkResponse) {
